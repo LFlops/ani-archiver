@@ -1,0 +1,62 @@
+name: Deploy to Kubernetes
+
+on:
+  push:
+    branches:
+      - main # 当代码推送到 main 分支时触发此工作流
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      # --- 1. 设置环境变量 ---
+      # 这里我们将 K8s 的配置信息作为环境变量注入，以供后续步骤使用
+      - name: Set environment variables
+        run: |
+          echo "APP_PORT=${{ secrets.APP_PORT }}" > app-config.env
+          echo "TMDB_API_KEY=${{ secrets.TMDB_API_KEY }}" > app-secret.env
+
+      # --- 2. 登录 Docker Hub ---
+      - name: Login to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # --- 3. 构建和推送 Docker 镜像 ---
+      - name: Build and push Docker image
+        id: docker_build
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: ${{ secrets.DOCKERHUB_USERNAME }}/ani-archiver:latest
+
+      # --- 4. 设置 Kubernetes 环境 ---
+      - name: Set up Kubernetes context
+        uses: azure/k8s-set-context@v1
+        with:
+          kubeconfig: ${{ secrets.KUBE_CONFIG }}
+
+      # --- 5. 设置镜像 ---
+      - name: Set image
+        run: |
+          sed -i "s|image: .*|image: ${{ secrets.DOCKERHUB_USERNAME }}/ani-archiver:latest|g" deployment.yaml
+
+      # --- 6. 部署到 Kubernetes ---
+      - name: Deploy to Kubernetes
+        run: |
+          # 创建或更新 ConfigMap
+          kubectl create configmap ani-archiver-config --from-env-file=app-config.env --dry-run=client -o yaml | kubectl apply -f -
+          
+          # 创建或更新 Secret
+          kubectl create secret generic ani-archiver-secret --from-env-file=app-secret.env --dry-run=client -o yaml | kubectl apply -f -
+
+          # 应用 Kubernetes 部署文件
+          kubectl apply -f deployment.yaml
+          
+          echo "Deployment complete!"

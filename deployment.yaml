@@ -1,0 +1,30 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ani-archiver-deployment
+  labels:
+    app: ani-archiver
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ani-archiver
+  template:
+    metadata:
+      labels:
+        app: ani-archiver
+    spec:
+      containers:
+        - name: ani-archiver-container
+          # 脚本将在这里替换镜像名称
+          image: IMAGE_PLACEHOLDER
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8000
+          envFrom:
+            # 从 ConfigMap 中加载所有非敏感环境变量
+            - configMapRef:
+                name: ani-archiver-config
+            # 从 Secret 中加载所有敏感环境变量
+            - secretRef:
+                name: ani-archiver-secret
