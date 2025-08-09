@@ -11,7 +11,6 @@ use std::os::unix::fs::symlink;
 use tmdb::{choose_from_results, fetch_tv_show_details, search_tv_shows};
 use utils::{extract_episode_info, get_file_hash};
 
-test
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenv().ok();
