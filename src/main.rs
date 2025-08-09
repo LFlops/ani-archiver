@@ -19,7 +19,7 @@ async fn local_env() -> (String, PathBuf, PathBuf) {
     (api_key, source, dest)
 }
 
-async fn hash_files(path:&PathBuf)-> Result<(Vec<String>, Vec<PathBuf>),Box<dyn std::error::Error>>{
+async fn hash_files(path: &PathBuf) -> Result<(Vec<String>, Vec<PathBuf>), Box<dyn std::error::Error>> {
     let mut current_file_hashes = Vec::new();
     let mut video_files = Vec::new();
     for file_entry in fs::read_dir(&path)? {
@@ -31,7 +31,7 @@ async fn hash_files(path:&PathBuf)-> Result<(Vec<String>, Vec<PathBuf>),Box<dyn 
         }
     }
     current_file_hashes.sort();
-    Ok((current_file_hashes,video_files))
+    Ok((current_file_hashes, video_files))
 }
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {

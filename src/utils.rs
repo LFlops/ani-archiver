@@ -4,13 +4,22 @@ use sha2::{Digest, Sha256};
 use std::fs;
 use std::io;
 use std::path::Path;
+use std::time::SystemTime;
 
 pub fn get_file_hash(path: &Path) -> Result<String, io::Error> {
-    let mut file = fs::File::open(path)?;
+    let metadata = fs::metadata(path)?;
+    let modified = metadata.modified()?;
+
+    // 将SystemTime转换为duration since UNIX_EPOCH
+    let duration = modified.duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap_or_default();
+
     let mut hasher = Sha256::new();
-    io::copy(&mut file, &mut hasher)?;
+    // 使用文件的最后修改时间作为哈希输入，而不是文件内容
+    hasher.update(format!("{}{}", duration.as_secs(), duration.subsec_nanos()).as_bytes());
     Ok(format!("{:x}", hasher.finalize()))
 }
+
 
 pub fn extract_episode_info(filename: &str) -> Option<(String, String)> {
     let re = Regex::new(r"[sS](\d{1,2})[eE](\d{1,2})|(\d{1,2})").unwrap();
