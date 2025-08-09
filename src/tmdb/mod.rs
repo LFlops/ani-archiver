@@ -158,7 +158,7 @@ mod tests {
             api_key,
             query
         ).await;
-        dbg!(&result); // 👀 打印错误信息
+
         assert!(result.is_ok());
         if let Ok(search_response) = result {
             assert_eq!(search_response.results.len(), 1);

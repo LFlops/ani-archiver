@@ -3,23 +3,25 @@ mod utils;
 
 use clap::Parser;
 use dotenv::dotenv;
-use tmdb::models::{Args, ProcessedMarker};
-use tmdb::nfo::create_tv_show_nfo;
 use std::env;
 use std::fs;
 use std::os::unix::fs::symlink;
 use std::path::PathBuf;
+use tmdb::models::{Args, ProcessedMarker};
+use tmdb::nfo::create_tv_show_nfo;
 use tmdb::{choose_from_results, fetch_tv_show_details, search_tv_shows};
 use utils::{extract_episode_info, get_file_hash};
 //创建一个类型，用于存放从环境变量中获取的API密钥/Source/Dest 等
 async fn local_env() -> (String, PathBuf, PathBuf) {
     let api_key = env::var("TMDB_API_KEY").expect("TMDB_API_KEY not set");
-    let source:PathBuf = PathBuf::from(env::var("SOURCE").expect("SOURCE not set"));
+    let source: PathBuf = PathBuf::from(env::var("SOURCE").expect("SOURCE not set"));
     let dest = PathBuf::from(env::var("DEST").expect("DEST not set"));
     (api_key, source, dest)
 }
 
-async fn hash_files(path: &PathBuf) -> Result<(Vec<String>, Vec<PathBuf>), Box<dyn std::error::Error>> {
+async fn hash_files(
+    path: &PathBuf,
+) -> Result<(Vec<String>, Vec<PathBuf>), Box<dyn std::error::Error>> {
     let mut current_file_hashes = Vec::new();
     let mut video_files = Vec::new();
     for file_entry in fs::read_dir(&path)? {
@@ -33,6 +35,32 @@ async fn hash_files(path: &PathBuf) -> Result<(Vec<String>, Vec<PathBuf>), Box<d
     current_file_hashes.sort();
     Ok((current_file_hashes, video_files))
 }
+async fn check_processed(
+    marker_file_path: &PathBuf,
+    current_file_hashes: &Vec<String>,
+    show_name: &str,
+) -> Result<(u32, bool), Box<dyn std::error::Error>> {
+    let mut tmdb_id = 0;
+    let mut details_cached = false;
+
+    if marker_file_path.exists() {
+        let marker_content = fs::read_to_string(&marker_file_path)?;
+        let marker: ProcessedMarker = serde_json::from_str(&marker_content)?;
+
+        let mut stored_hashes = marker.file_hashes;
+        stored_hashes.sort();
+
+        if stored_hashes == *current_file_hashes {
+            tmdb_id = marker.tmdb_id;
+            details_cached = true;
+            println!(
+                "\n'{}' is up-to-date. Using cached TMDB ID {}.",
+                show_name, tmdb_id
+            );
+        }
+    }
+    Ok((tmdb_id, details_cached))
+}
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenv().ok();
@@ -40,8 +68,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let (api_key, source, dest) = local_env().await;
 
-
     fs::create_dir_all(&dest)?;
+    let client = reqwest::Client::new();
 
     for entry in fs::read_dir(&source)? {
         let entry = entry?;
@@ -50,29 +78,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         if path.is_dir() {
             let show_name = path.file_name().unwrap().to_string_lossy().to_string();
             let dest_dir = dest.join(&show_name);
+
+            let (current_file_hashes, video_files) = hash_files(&path).await?;
+
             let marker_file_path = dest_dir.join(".processed.json");
-
-            let (current_file_hashes,video_files) = hash_files(&path).await?;
-
-            let mut tmdb_id = 0;
-            let mut details_cached = false;
-
-            if  marker_file_path.exists() {
-                let marker_content = fs::read_to_string(&marker_file_path)?;
-                let marker: ProcessedMarker = serde_json::from_str(&marker_content)?;
-
-                let mut stored_hashes = marker.file_hashes;
-                stored_hashes.sort();
-
-                if stored_hashes == current_file_hashes {
-                    tmdb_id = marker.tmdb_id;
-                    details_cached = true;
-                    println!(
-                        "\n'{}' is up-to-date. Using cached TMDB ID {}.",
-                        show_name, tmdb_id
-                    );
-                }
-            }
+            let (mut tmdb_id, details_cached) =
+                check_processed(&marker_file_path, &current_file_hashes, &show_name).await?;
 
             if tmdb_id == 0 {
                 println!("\nSearching TMDB for '{}'...", show_name);
