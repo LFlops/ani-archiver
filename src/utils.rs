@@ -34,3 +34,59 @@ where
     let opt = Option::deserialize(deserializer)?;
     Ok(opt.unwrap_or_default())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+    use tempfile::NamedTempFile;
+
+    #[test]
+    fn test_get_file_hash() {
+        let mut file = NamedTempFile::new().unwrap();
+        writeln!(file, "Hello, world!").unwrap();
+
+        let hash = get_file_hash(file.path());
+        assert!(hash.is_ok());
+        let hash_str = hash.unwrap();
+        assert_eq!(hash_str.len(), 64); // SHA256 produces 64 character hex string
+    }
+
+    #[test]
+    fn test_extract_episode_info_with_season_and_episode() {
+        // Test S01E02 format
+        assert_eq!(
+            extract_episode_info("show_S01E02.mp4"),
+            Some(("01".to_string(), "02".to_string()))
+        );
+
+        // Test s3e12 format
+        assert_eq!(
+            extract_episode_info("show_s3e12.avi"),
+            Some(("03".to_string(), "12".to_string()))
+        );
+
+        // Test with extra text
+        assert_eq!(
+            extract_episode_info("[MyGroup] Awesome Show S02E05 [1080p].mkv"),
+            Some(("02".to_string(), "05".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_extract_episode_info_with_only_episode() {
+        // Test with just episode number
+        assert_eq!(
+            extract_episode_info("show_05.mp4"),
+            Some(("01".to_string(), "05".to_string()))
+        );
+
+        // Test with multiple numbers - should match the first one as episode
+        assert_eq!(
+            extract_episode_info("show_12_extra.mp4"),
+            Some(("01".to_string(), "12".to_string()))
+        );
+    }
+
+
+}
