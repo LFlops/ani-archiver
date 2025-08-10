@@ -1,13 +1,59 @@
 use crate::tmdb::models::{SearchResponse, TvShowDetails};
 use reqwest::Client;
+use std::io;
 use std::io::{BufRead, Write};
 
 pub mod models;
-pub mod nfo;
-mod scraper;
 
 pub const API_BASE_URL: &str = "https://api.themoviedb.org/3";
+pub async fn process_show(
+    details_cached: bool,
+    client: &Client,
+    api_key: &str,
+    tmdb_id: u32,
+) -> Result<TvShowDetails, Box<dyn std::error::Error>> {
+    let show_details = if details_cached {
+        fetch_tv_show_details_with_client(&client, API_BASE_URL, &api_key, tmdb_id).await?
+    } else {
+        println!("Fetching details for TMDB ID {}...", tmdb_id);
+        let details =
+            fetch_tv_show_details_with_client(&client, API_BASE_URL, &api_key, tmdb_id).await?;
+        details
+    };
+    Ok(show_details)
+}
 
+pub async fn check_tmdb_id(
+    tmdb_id: &u32,
+    client: &Client,
+    show_name: &str,
+    api_key: &str,
+) -> Result<u32, Box<dyn std::error::Error>> {
+    if *tmdb_id != 0 {
+        return Ok(*tmdb_id);
+    }
+
+    println!("\nSearching TMDB for '{}'...", show_name);
+    let search_results =
+        search_tv_shows_with_client(client, API_BASE_URL, api_key, show_name).await?;
+    if search_results.results.is_empty() {
+        println!("No results found. Skipping.");
+        return Err(Box::new(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            format!("No TMDB results found for show: {}", show_name),
+        )));
+    }
+    // todo 通过管道与其他逻辑节藕，避免阻塞整体。
+
+    let mut stdout = io::stdout();
+    let stdin = io::stdin();
+    let mut buf_reader = io::BufReader::new(stdin);
+    Ok(choose_from_results(
+        &search_results,
+        &mut buf_reader,
+        &mut stdout,
+    )?)
+}
 // 可测试版本的函数，允许注入client和base_url
 pub async fn fetch_tv_show_details_with_client(
     client: &Client,

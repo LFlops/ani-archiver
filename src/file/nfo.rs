@@ -48,10 +48,15 @@ mod tests {
         let show = TvShowDetails {
             id: 1399,
             name: "Game of Thrones".to_string(),
-            overview: "Seven noble families fight for control of the mythical land of Westeros.".to_string(),
+            overview: "Seven noble families fight for control of the mythical land of Westeros."
+                .to_string(),
             genres: vec![
-                Genre { name: "Sci-Fi".to_string() },
-                Genre { name: "Fantasy".to_string() },
+                Genre {
+                    name: "Sci-Fi".to_string(),
+                },
+                Genre {
+                    name: "Fantasy".to_string(),
+                },
             ],
             first_air_date: Some("2011-04-17".to_string()),
             vote_average: 8.4,
@@ -60,7 +65,9 @@ mod tests {
         let nfo_content = create_tv_show_nfo(&show);
 
         assert!(nfo_content.contains("<title>Game of Thrones</title>"));
-        assert!(nfo_content.contains("<plot>Seven noble families fight for control of the mythical land of Westeros.</plot>"));
+        assert!(nfo_content.contains(
+            "<plot>Seven noble families fight for control of the mythical land of Westeros.</plot>"
+        ));
         assert!(nfo_content.contains("<year>2011</year>"));
         assert!(nfo_content.contains("<premiered>2011-04-17</premiered>"));
         assert!(nfo_content.contains("<rating>8.4</rating>"));
@@ -93,9 +100,9 @@ mod tests {
             id: 5678,
             name: "Incomplete Date Show".to_string(),
             overview: "A show with empty air date.".to_string(),
-            genres: vec![
-                Genre { name: "Drama".to_string() },
-            ],
+            genres: vec![Genre {
+                name: "Drama".to_string(),
+            }],
             first_air_date: None,
             vote_average: 6.2,
         };

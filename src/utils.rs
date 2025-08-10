@@ -3,9 +3,24 @@ use serde::{self, Deserialize, Deserializer};
 use sha2::{Digest, Sha256};
 use std::fs;
 use std::io;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::SystemTime;
-
+pub async fn hash_files(
+    path: &PathBuf,
+) -> Result<(Vec<String>, Vec<PathBuf>), Box<dyn std::error::Error>> {
+    let mut current_file_hashes = Vec::new();
+    let mut video_files = Vec::new();
+    for file_entry in fs::read_dir(&path)? {
+        let file_entry = file_entry?;
+        if file_entry.path().is_file() {
+            let hash = get_file_hash(&file_entry.path())?;
+            current_file_hashes.push(hash);
+            video_files.push(file_entry.path());
+        }
+    }
+    current_file_hashes.sort();
+    Ok((current_file_hashes, video_files))
+}
 pub fn get_file_hash(path: &Path) -> Result<String, io::Error> {
     let metadata = fs::metadata(path)?;
     let modified = metadata.modified()?;

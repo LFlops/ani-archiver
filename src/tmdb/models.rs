@@ -1,6 +1,6 @@
 use crate::utils::deserialize_null_string;
 use clap::Parser;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::path::PathBuf;
 
 /// A tool to scrape, organize, and create hard links for TV shows.
@@ -49,10 +49,4 @@ pub struct TvShowSearchResult {
 #[derive(Debug, Deserialize)]
 pub struct SearchResponse {
     pub results: Vec<TvShowSearchResult>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ProcessedMarker {
-    pub tmdb_id: u32,
-    pub file_hashes: Vec<String>,
 }
