@@ -11,8 +11,8 @@ use std::path::PathBuf;
 use tmdb::models::ProcessedMarker;
 use tmdb::nfo::create_tv_show_nfo;
 use tmdb::{
-    choose_from_results, fetch_tv_show_details_with_client, search_tv_shows_with_client,
-    API_BASE_URL,
+    API_BASE_URL, choose_from_results, fetch_tv_show_details_with_client,
+    search_tv_shows_with_client,
 };
 use utils::{extract_episode_info, get_file_hash};
 
@@ -84,26 +84,27 @@ async fn process_show(
     Ok(show_details)
 }
 async fn check_tmdb_id(
-    tmdb_id: &mut u32,
+    tmdb_id: &u32,
     client: &Client,
     show_name: &str,
     api_key: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
-    if *tmdb_id == 0 {
-        println!("\nSearching TMDB for '{}'...", show_name);
-        let search_results =
-            search_tv_shows_with_client(client, API_BASE_URL, api_key, show_name).await?;
-        if search_results.results.is_empty() {
-            println!("No results found. Skipping.");
-            return Err(Box::new(std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                format!("No TMDB results found for show: {}", show_name),
-            )));
-        }
-        // todo 通过管道与其他逻辑节藕，避免阻塞整体。
-        *tmdb_id = choose_from_results(search_results)?;
+) -> Result<u32, Box<dyn std::error::Error>> {
+    if *tmdb_id != 0 {
+        return Ok(*tmdb_id);
     }
-    Ok(())
+
+    println!("\nSearching TMDB for '{}'...", show_name);
+    let search_results =
+        search_tv_shows_with_client(client, API_BASE_URL, api_key, show_name).await?;
+    if search_results.results.is_empty() {
+        println!("No results found. Skipping.");
+        return Err(Box::new(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            format!("No TMDB results found for show: {}", show_name),
+        )));
+    }
+    // todo 通过管道与其他逻辑节藕，避免阻塞整体。
+    Ok(choose_from_results(search_results)?)
 }
 async fn write_marker(
     marker_file_path: &PathBuf,
@@ -166,7 +167,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (api_key, source, dest) = local_env().await;
 
     fs::create_dir_all(&dest)?;
-    let client = reqwest::Client::new();
+    let client = Client::new();
 
     for entry in fs::read_dir(&source)? {
         let entry = entry?;
@@ -182,13 +183,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let (mut tmdb_id, details_cached) =
                 check_processed(&marker_file_path, &current_file_hashes, &show_name).await?;
 
-            match check_tmdb_id(&mut tmdb_id, &client, &show_name, &api_key).await {
-                Ok(_) => {}
+            tmdb_id = match check_tmdb_id(&tmdb_id, &client, &show_name, &api_key).await {
+                Ok(tmdb_id) => tmdb_id,
                 Err(e) => {
                     println!("Error: {}", e);
                     continue;
                 }
-            }
+            };
 
             let show_details = process_show(details_cached, &client, &api_key, tmdb_id).await?;
             write_marker(&marker_file_path, &dest_dir, tmdb_id, current_file_hashes).await?;
