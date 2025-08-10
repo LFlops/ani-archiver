@@ -1,5 +1,5 @@
 use crate::tmdb::models::{SearchResponse, TvShowDetails};
-use reqwest::Client;
+use reqwest::{Client, Url};
 use std::io;
 use std::io::{BufRead, Write};
 
@@ -78,9 +78,14 @@ pub async fn search_tv_shows_with_client(
     api_key: &str,
     query: &str,
 ) -> Result<SearchResponse, reqwest::Error> {
-    let url = format!("{}/search/tv", base_url);
+    let mut url = Url::parse(base_url).expect("Failed to parse base_url");
+    url.path_segments_mut()
+        .expect("cannot be base")
+        .push("search")
+        .push("tv");
+
     client
-        .get(&url)
+        .get(url)
         .query(&[("api_key", api_key), ("query", query)])
         .send()
         .await?
@@ -131,12 +136,12 @@ pub fn choose_from_results<R: BufRead, W: Write>(
         writer.flush()?; // Ensure the prompt is shown.
 
         let mut input = String::new();
-        reader.read_line(&mut input)?; // Read from the provided reader.
+        reader.read_line(&mut input)?;
 
         // Use our pure logic function to process the input.
         match parse_choice(&input, results) {
             Ok(id) => return Ok(id), // Valid choice, exit the loop and return.
-            Err(msg) => writeln!(writer, "{}", msg)?, // Invalid choice, print error and loop again.
+            Err(msg) => writeln!(writer, "{}", msg)?,
         }
     }
 }
@@ -195,14 +200,27 @@ mod tests {
         let api_key = "test_key";
 
         let mock_response = json!({
+            "page":1,
             "results": [
                 {
                     "id": 1399,
                     "name": "Game of Thrones",
                     "first_air_date": "2011-04-17",
-                    "overview": "The best show ever"
+                    "overview": "The best show ever",
+                    "adult": false,
+                    "backdrop_path": "/zwHdg4RWuAsCPHwcxOrOMTDGcKi.jpg",
+                    "genre_ids": [16, 18, 10759, 10765],
+                    "origin_country": ["JP"],
+                    "original_language": "ja",
+                    "original_name": "ATRI -My Dear Moments-",
+                    "popularity": 2.5202,
+                    "poster_path": "/6bQKMlHwRmGnvIRxDahl1r8WJkE.jpg",
+                    "vote_average": 7.938,
+                    "vote_count": 16
                 }
-            ]
+            ],
+            "total_pages": 1,
+            "total_results": 1
         });
 
         let _m = mock("GET", "/search/tv")
@@ -278,48 +296,66 @@ mod tests {
 
     #[test]
     fn test_format_search_results() {
-        let search_response = SearchResponse {
-            results: vec![
-                models::TvShowSearchResult {
-                    id: 1,
-                    name: "Show 1".to_string(),
-                    first_air_date: Some("2022-01-01".to_string()),
-                    overview: Some("Overview 1".to_string()),
-                },
-                models::TvShowSearchResult {
-                    id: 2,
-                    name: "Show 2".to_string(),
-                    first_air_date: None,
-                    overview: Some("Overview 2".to_string()),
-                },
-            ],
-        };
+        let search_response = get_mock_results();
 
-        let expected_output = "Multiple results found, please choose one:\n1. Show 1 (2022-01-01)\n2. Show 2 (????)\n";
+        let expected_output = "Multiple results found, please choose one:\n1. First Result (2023-01-01)\n2. Second Result (2023-02-02)\n3. Third Result (2023-03-03)\n";
         let actual_output = format_search_results(&search_response);
 
         assert_eq!(actual_output, expected_output);
     }
     fn get_mock_results() -> SearchResponse {
         SearchResponse {
+            page: 1,
+            total_pages: 1,
+            total_results: 3,
             results: vec![
                 TvShowSearchResult {
                     id: 101,
                     name: "First Result".to_string(),
                     first_air_date: Some("2023-01-01".to_string()),
                     overview: Some("Overview 1".to_string()),
+                    adult: false,
+                    backdrop_path: Some(String::from("...")),
+                    genre_ids: vec![1],
+                    origin_country: vec![String::from("US")],
+                    original_language: String::from("en"),
+                    original_name: String::from("First Result"),
+                    popularity: 1.0,
+                    poster_path: Some(String::from("...")),
+                    vote_average: 1.0,
+                    vote_count: 1,
                 },
                 TvShowSearchResult {
                     id: 202,
                     name: "Second Result".to_string(),
                     first_air_date: Some("2023-02-02".to_string()),
                     overview: Some("Overview 2".to_string()),
+                    adult: false,
+                    backdrop_path: Some(String::from("...")),
+                    genre_ids: vec![1],
+                    origin_country: vec![String::from("US")],
+                    original_language: String::from("en"),
+                    original_name: String::from("Second Result"),
+                    popularity: 1.0,
+                    poster_path: Some(String::from("...")),
+                    vote_average: 1.0,
+                    vote_count: 1,
                 },
                 TvShowSearchResult {
                     id: 303,
                     name: "Third Result".to_string(),
                     first_air_date: Some("2023-03-03".to_string()),
                     overview: Some("Overview 3".to_string()),
+                    adult: false,
+                    backdrop_path: Some(String::from("...")),
+                    genre_ids: vec![1],
+                    origin_country: vec![String::from("US")],
+                    original_language: String::from("en"),
+                    original_name: String::from("Third Result"),
+                    popularity: 1.0,
+                    poster_path: Some(String::from("...")),
+                    vote_average: 1.0,
+                    vote_count: 1,
                 },
             ],
         }

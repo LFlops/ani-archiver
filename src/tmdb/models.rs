@@ -38,15 +38,29 @@ pub struct TvShowDetails {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 pub struct TvShowSearchResult {
     pub id: u32,
     pub name: String,
     pub first_air_date: Option<String>,
-    #[allow(dead_code)]
     pub overview: Option<String>,
+    pub adult: bool,
+    pub backdrop_path: Option<String>,
+    pub genre_ids: Vec<u32>,
+    pub origin_country: Vec<String>,
+    pub original_language: String,
+    pub original_name: String,
+    pub popularity: f64,
+    pub poster_path: Option<String>,
+    pub vote_average: f64,
+    pub vote_count: u32,
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 pub struct SearchResponse {
+    pub page: u32,
     pub results: Vec<TvShowSearchResult>,
+    pub total_pages: u32,
+    pub total_results: u32,
 }
