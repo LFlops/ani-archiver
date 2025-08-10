@@ -4,7 +4,7 @@ mod utils;
 use crate::tmdb::models::TvShowDetails;
 use dotenv::dotenv;
 use reqwest::Client;
-use std::env;
+use std::{env, io};
 use std::fs;
 use std::fs::hard_link;
 use std::path::PathBuf;
@@ -104,7 +104,11 @@ async fn check_tmdb_id(
         )));
     }
     // todo 通过管道与其他逻辑节藕，避免阻塞整体。
-    Ok(choose_from_results(search_results)?)
+
+    let mut stdout = io::stdout();
+    let stdin = io::stdin();
+    let mut buf_reader = io::BufReader::new(stdin);
+    Ok(choose_from_results(&search_results, &mut buf_reader, &mut stdout)?)
 }
 async fn write_marker(
     marker_file_path: &PathBuf,

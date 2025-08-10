@@ -1,5 +1,6 @@
 use crate::tmdb::models::{SearchResponse, TvShowDetails};
 use reqwest::Client;
+use std::io::{BufRead, Write};
 
 pub mod models;
 pub mod nfo;
@@ -41,38 +42,63 @@ pub async fn search_tv_shows_with_client(
         .await
 }
 
-pub fn choose_from_results(results: SearchResponse) -> Result<u32, Box<dyn std::error::Error>> {
-    use std::io::{self, Write};
-
-    println!("Multiple results found, please choose one:");
+pub fn format_search_results(results: &SearchResponse) -> String {
+    let mut output = String::new();
+    output.push_str("Multiple results found, please choose one:\n");
     for (i, show) in results.results.iter().enumerate() {
-        println!(
-            "{}. {} ({})",
+        output.push_str(&format!(
+            "{}. {} ({})\n",
             i + 1,
             show.name,
             show.first_air_date.as_deref().unwrap_or("????")
-        );
+        ));
     }
+    output
+}
+pub fn parse_choice(input: &str, results: &SearchResponse) -> Result<u32, &'static str> {
+    match input.trim().parse::<usize>() {
+        Ok(choice) if choice > 0 && choice <= results.results.len() => {
+            // Valid choice, return the corresponding ID.
+            Ok(results.results[choice - 1].id)
+        }
+        Ok(_) => {
+            // Parsed as a number, but it's out of the valid range.
+            Err("Choice is out of range.")
+        }
+        Err(_) => {
+            // Failed to parse as a number.
+            Err("Invalid input. Please enter a number.")
+        }
+    }
+}
+pub fn choose_from_results<R: BufRead, W: Write>(
+    results: &SearchResponse,
+    reader: &mut R,
+    writer: &mut W,
+) -> Result<u32, Box<dyn std::error::Error>> {
+    // Write the formatted results to the provided writer.
+    writeln!(writer, "{}", format_search_results(results))?;
 
     loop {
-        print!("Enter number (1-{}): ", results.results.len());
-        io::stdout().flush()?;
-        let mut input = String::new();
-        io::stdin().read_line(&mut input)?;
+        // Write the prompt.
+        write!(writer, "Enter number (1-{}): ", results.results.len())?;
+        writer.flush()?; // Ensure the prompt is shown.
 
-        let choice = input.trim().parse::<usize>();
-        if let Ok(choice) = choice {
-            if choice > 0 && choice <= results.results.len() {
-                return Ok(results.results[choice - 1].id);
-            }
+        let mut input = String::new();
+        reader.read_line(&mut input)?; // Read from the provided reader.
+
+        // Use our pure logic function to process the input.
+        match parse_choice(&input, results) {
+            Ok(id) => return Ok(id), // Valid choice, exit the loop and return.
+            Err(msg) => writeln!(writer, "{}", msg)?, // Invalid choice, print error and loop again.
         }
-        println!("Invalid input. Please try again.");
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tmdb::models::TvShowSearchResult;
     use mockito::mock;
     use serde_json::json;
 
@@ -100,7 +126,10 @@ mod tests {
             .with_body(mock_response.to_string())
             .create();
 
-        let client = Client::builder().no_proxy().build().expect("Client build failed");
+        let client = Client::builder()
+            .no_proxy()
+            .build()
+            .expect("Client build failed");
         let result =
             fetch_tv_show_details_with_client(&client, &mockito::server_url(), api_key, tv_show_id)
                 .await;
@@ -140,7 +169,10 @@ mod tests {
             .with_body(mock_response.to_string())
             .create();
 
-        let client = Client::builder().no_proxy().build().expect("Client build failed");
+        let client = Client::builder()
+            .no_proxy()
+            .build()
+            .expect("Client build failed");
         let result =
             search_tv_shows_with_client(&client, &mockito::server_url(), api_key, query).await;
 
@@ -169,7 +201,10 @@ mod tests {
             .with_status(404)
             .create();
 
-        let client = Client::builder().no_proxy().build().expect("Client build failed");
+        let client = Client::builder()
+            .no_proxy()
+            .build()
+            .expect("Client build failed");
         let result =
             fetch_tv_show_details_with_client(&client, &mockito::server_url(), api_key, tv_show_id)
                 .await;
@@ -193,5 +228,127 @@ mod tests {
     async fn test_search_tv_shows_url_format() {
         let url = format!("{}/search/tv", API_BASE_URL);
         assert_eq!(url, "https://api.themoviedb.org/3/search/tv");
+    }
+
+    #[test]
+    fn test_format_search_results() {
+        let search_response = SearchResponse {
+            results: vec![
+                models::TvShowSearchResult {
+                    id: 1,
+                    name: "Show 1".to_string(),
+                    first_air_date: Some("2022-01-01".to_string()),
+                    overview: Some("Overview 1".to_string()),
+                },
+                models::TvShowSearchResult {
+                    id: 2,
+                    name: "Show 2".to_string(),
+                    first_air_date: None,
+                    overview: Some("Overview 2".to_string()),
+                },
+            ],
+        };
+
+        let expected_output = "Multiple results found, please choose one:\n1. Show 1 (2022-01-01)\n2. Show 2 (????)\n";
+        let actual_output = format_search_results(&search_response);
+
+        assert_eq!(actual_output, expected_output);
+    }
+    fn get_mock_results() -> SearchResponse {
+        SearchResponse {
+            results: vec![
+                TvShowSearchResult {
+                    id: 101,
+                    name: "First Result".to_string(),
+                    first_air_date: Some("2023-01-01".to_string()),
+                    overview: Some("Overview 1".to_string()),
+                },
+                TvShowSearchResult {
+                    id: 202,
+                    name: "Second Result".to_string(),
+                    first_air_date: Some("2023-02-02".to_string()),
+                    overview: Some("Overview 2".to_string()),
+                },
+                TvShowSearchResult {
+                    id: 303,
+                    name: "Third Result".to_string(),
+                    first_air_date: Some("2023-03-03".to_string()),
+                    overview: Some("Overview 3".to_string()),
+                },
+            ],
+        }
+    }
+    #[test]
+    fn test_parse_choice_valid() {
+        let results = get_mock_results();
+        // A valid choice "2" should return the ID of the second item.
+        assert_eq!(parse_choice("2\n", &results), Ok(202));
+    }
+
+    #[test]
+    fn test_parse_choice_with_whitespace() {
+        let results = get_mock_results();
+        // Input with extra whitespace should be trimmed and parsed correctly.
+        assert_eq!(parse_choice("  1  ", &results), Ok(101));
+    }
+
+    #[test]
+    fn test_parse_choice_out_of_bounds() {
+        let results = get_mock_results();
+        // "4" is a number but is not a valid choice.
+        assert_eq!(parse_choice("4", &results), Err("Choice is out of range."));
+        // "0" is also out of bounds.
+        assert_eq!(parse_choice("0", &results), Err("Choice is out of range."));
+    }
+
+    #[test]
+    fn test_parse_choice_invalid_input() {
+        let results = get_mock_results();
+        // Non-numeric input should result in an error.
+        assert_eq!(
+            parse_choice("abc", &results),
+            Err("Invalid input. Please enter a number.")
+        );
+    }
+
+    // --- Tests for the I/O function: `choose_from_results` ---
+
+    #[test]
+    fn test_choose_from_results_happy_path() {
+        let results = get_mock_results();
+        // Simulate user input "2\n". The `b` prefix creates a byte slice.
+        let mut mock_reader = std::io::Cursor::new(b"2\n");
+        // Capture output in a vector of bytes.
+        let mut mock_writer = Vec::new();
+
+        // Run the function with our mock I/O objects.
+        let result_id = choose_from_results(&results, &mut mock_reader, &mut mock_writer).unwrap();
+
+        // Check if the correct ID was returned.
+        assert_eq!(result_id, 202);
+
+        // Check if the output written to the console is correct.
+        let output = String::from_utf8(mock_writer).unwrap();
+        assert!(output.contains("Multiple results found, please choose one:"));
+        assert!(output.contains("2. Second Result"));
+        assert!(output.contains("Enter number (1-3):"));
+    }
+
+    #[test]
+    fn test_choose_from_results_invalid_then_valid_input() {
+        let results = get_mock_results();
+        // Simulate a user first typing "bad", then typing a valid choice "3".
+        let mut mock_reader = std::io::Cursor::new(b"bad\n3\n");
+        let mut mock_writer = Vec::new();
+
+        let result_id = choose_from_results(&results, &mut mock_reader, &mut mock_writer).unwrap();
+
+        // The final result should be the valid choice.
+        assert_eq!(result_id, 303);
+
+        // Check the output to ensure the error message was displayed before success.
+        let output = String::from_utf8(mock_writer).unwrap();
+        assert!(output.contains("Invalid input. Please enter a number.")); // Error message
+        assert!(output.contains("Enter number (1-3):")); // Prompt appears twice
     }
 }
