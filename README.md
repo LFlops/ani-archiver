@@ -1,6 +1,6 @@
 # Ani Archiver
 
-[![codecov](https://codecov.io/gh/your-repo-owner/your-repo-name/branch/main/graph/badge.svg)](https://codecov.io/gh/LFlops/ani-archiver)
+[![codecov](https://codecov.io/gh/LFlops/ani-archiver/branch/develop/graph/badge.svg)](https://codecov.io/gh/LFlops/ani-archiver)
 
 
 A command-line tool to scrape TV show information from The Movie Database (TMDB), organize video files, and create NFO files for media centers like Kodi.
