@@ -2,11 +2,11 @@ use crate::file::models::ProcessedMarker;
 use crate::utils::extract_episode_info;
 use std::fs;
 use std::fs::hard_link;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
-pub mod nfo;
-pub mod models;
 pub mod cache;
+pub mod models;
+pub mod nfo;
 
 pub async fn write_marker(
     marker_file_path: &PathBuf,
@@ -20,13 +20,13 @@ pub async fn write_marker(
         file_hashes: current_file_hashes,
     };
     let marker_content = serde_json::to_string(&marker)?;
-    fs::create_dir_all(&dest_dir)?;
-    fs::write(&marker_file_path, marker_content)?;
+    fs::create_dir_all(dest_dir)?;
+    fs::write(marker_file_path, marker_content)?;
     Ok(())
 }
 pub async fn organize_files(
     video_files: Vec<PathBuf>,
-    dest_dir: &PathBuf,
+    dest_dir: &Path,
     show_name: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
     println!("  Organizing files...");
@@ -52,10 +52,7 @@ pub async fn organize_files(
                 hard_link(&video_file, &hard_link_path)?;
                 println!("    Created hard link: {}", hard_link_path.display());
             } else {
-                println!(
-                    "    Skipping '{}': Could not extract episode info.",
-                    file_name
-                );
+                println!("    Skipping '{file_name}': Could not extract episode info.");
             }
         }
     }

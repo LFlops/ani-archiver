@@ -13,7 +13,7 @@ pub async fn check_processed(
         return Ok((tmdb_id, details_cached));
     }
 
-    let marker_content = fs::read_to_string(&marker_file_path)?;
+    let marker_content = fs::read_to_string(marker_file_path)?;
     let marker: ProcessedMarker = serde_json::from_str(&marker_content)?;
 
     let mut stored_hashes = marker.file_hashes;
@@ -23,8 +23,7 @@ pub async fn check_processed(
         tmdb_id = marker.tmdb_id;
         details_cached = true;
         println!(
-            "\n'{}' is up-to-date. Using cached TMDB ID {}.",
-            show_name, tmdb_id
+            "\n'{show_name}' is up-to-date. Using cached TMDB ID {tmdb_id}."
         );
     }
     Ok((tmdb_id, details_cached))

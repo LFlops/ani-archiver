@@ -10,7 +10,7 @@ pub async fn hash_files(
 ) -> Result<(Vec<String>, Vec<PathBuf>), Box<dyn std::error::Error>> {
     let mut current_file_hashes = Vec::new();
     let mut video_files = Vec::new();
-    for file_entry in fs::read_dir(&path)? {
+    for file_entry in fs::read_dir(path)? {
         let file_entry = file_entry?;
         if file_entry.path().is_file() {
             let hash = get_file_hash(&file_entry.path())?;
@@ -26,7 +26,8 @@ pub fn get_file_hash(path: &Path) -> Result<String, io::Error> {
     let modified = metadata.modified()?;
 
     // 将SystemTime转换为duration since UNIX_EPOCH
-    let duration = modified.duration_since(SystemTime::UNIX_EPOCH)
+    let duration = modified
+        .duration_since(SystemTime::UNIX_EPOCH)
         .unwrap_or_default();
 
     let mut hasher = Sha256::new();
@@ -35,7 +36,6 @@ pub fn get_file_hash(path: &Path) -> Result<String, io::Error> {
     Ok(format!("{:x}", hasher.finalize()))
 }
 
-
 pub fn extract_episode_info(filename: &str) -> Option<(String, String)> {
     // todo 修改为根据字幕组匹配规则
     let re = Regex::new(r"[sS](\d{1,2})[eE](\d{1,2})|(\d{1,2})").unwrap();
@@ -43,7 +43,7 @@ pub fn extract_episode_info(filename: &str) -> Option<(String, String)> {
         if let Some(s) = caps.get(1) {
             let s_num = s.as_str();
             let e_num = caps.get(2).unwrap().as_str();
-            return Some((format!("{:0>2}", s_num), format!("{:0>2}", e_num)));
+            return Some((format!("{s_num:0>2}",), format!("{e_num:0>2}",)));
         } else if let Some(e) = caps.get(3) {
             return Some(("01".to_string(), format!("{:0>2}", e.as_str())));
         }
@@ -112,6 +112,4 @@ mod tests {
             Some(("01".to_string(), "12".to_string()))
         );
     }
-
-
 }

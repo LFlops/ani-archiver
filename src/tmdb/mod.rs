@@ -13,12 +13,10 @@ pub async fn process_show(
     tmdb_id: u32,
 ) -> Result<TvShowDetails, Box<dyn std::error::Error>> {
     let show_details = if details_cached {
-        fetch_tv_show_details_with_client(&client, API_BASE_URL, &api_key, tmdb_id).await?
+        fetch_tv_show_details_with_client(client, API_BASE_URL, api_key, tmdb_id).await?
     } else {
-        println!("Fetching details for TMDB ID {}...", tmdb_id);
-        let details =
-            fetch_tv_show_details_with_client(&client, API_BASE_URL, &api_key, tmdb_id).await?;
-        details
+        println!("Fetching details for TMDB ID {tmdb_id}...");
+        fetch_tv_show_details_with_client(client, API_BASE_URL, api_key, tmdb_id).await?
     };
     Ok(show_details)
 }
@@ -33,14 +31,14 @@ pub async fn check_tmdb_id(
         return Ok(*tmdb_id);
     }
 
-    println!("\nSearching TMDB for '{}'...", show_name);
+    println!("\nSearching TMDB for '{show_name}'...");
     let search_results =
         search_tv_shows_with_client(client, API_BASE_URL, api_key, show_name).await?;
     if search_results.results.is_empty() {
         println!("No results found. Skipping.");
         return Err(Box::new(std::io::Error::new(
             std::io::ErrorKind::NotFound,
-            format!("No TMDB results found for show: {}", show_name),
+            format!("No TMDB results found for show: {show_name}"),
         )));
     }
     // todo 通过管道与其他逻辑节藕，避免阻塞整体。
@@ -48,11 +46,7 @@ pub async fn check_tmdb_id(
     let mut stdout = io::stdout();
     let stdin = io::stdin();
     let mut buf_reader = io::BufReader::new(stdin);
-    Ok(choose_from_results(
-        &search_results,
-        &mut buf_reader,
-        &mut stdout,
-    )?)
+    choose_from_results(&search_results, &mut buf_reader, &mut stdout)
 }
 // 可测试版本的函数，允许注入client和base_url
 pub async fn fetch_tv_show_details_with_client(
@@ -61,7 +55,7 @@ pub async fn fetch_tv_show_details_with_client(
     api_key: &str,
     tv_show_id: u32,
 ) -> Result<TvShowDetails, reqwest::Error> {
-    let url = format!("{}/tv/{}", base_url, tv_show_id);
+    let url = format!("{base_url}/tv/{tv_show_id}");
     client
         .get(&url)
         .query(&[("api_key", api_key)])
@@ -141,7 +135,7 @@ pub fn choose_from_results<R: BufRead, W: Write>(
         // Use our pure logic function to process the input.
         match parse_choice(&input, results) {
             Ok(id) => return Ok(id), // Valid choice, exit the loop and return.
-            Err(msg) => writeln!(writer, "{}", msg)?,
+            Err(msg) => writeln!(writer, "{msg}")?,
         }
     }
 }
@@ -167,7 +161,7 @@ mod tests {
             "vote_average": 8.4
         });
 
-        let _m = mock("GET", format!("/tv/{}", tv_show_id).as_str())
+        let _m = mock("GET", format!("/tv/{tv_show_id}").as_str())
             .match_query(mockito::Matcher::UrlEncoded(
                 "api_key".into(),
                 api_key.into(),
@@ -257,7 +251,7 @@ mod tests {
         let tv_show_id = 999999; // 不存在的ID
         let api_key = "test_key";
 
-        let _m = mock("GET", format!("/tv/{}", tv_show_id).as_str())
+        let _m = mock("GET", format!("/tv/{tv_show_id}").as_str())
             .match_query(mockito::Matcher::UrlEncoded(
                 "api_key".into(),
                 api_key.into(),
@@ -284,13 +278,13 @@ mod tests {
     #[tokio::test]
     async fn test_fetch_tv_show_details_url_format() {
         let tv_show_id = 12345u32;
-        let url = format!("{}/tv/{}", API_BASE_URL, tv_show_id);
+        let url = format!("{API_BASE_URL}/tv/{tv_show_id}");
         assert_eq!(url, "https://api.themoviedb.org/3/tv/12345");
     }
 
     #[tokio::test]
     async fn test_search_tv_shows_url_format() {
-        let url = format!("{}/search/tv", API_BASE_URL);
+        let url = format!("{API_BASE_URL}/search/tv",);
         assert_eq!(url, "https://api.themoviedb.org/3/search/tv");
     }
 

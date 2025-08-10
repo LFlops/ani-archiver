@@ -56,7 +56,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             tmdb_id = match check_tmdb_id(&tmdb_id, &client, &show_name, &api_key).await {
                 Ok(tmdb_id) => tmdb_id,
                 Err(e) => {
-                    println!("Error fetching TMDB ID for '{}': {}", show_name, e);
+                    println!("Error fetching TMDB ID for '{show_name}': {e}");
                     continue;
                 }
             };
@@ -68,7 +68,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let nfo_content = create_tv_show_nfo(&show_details);
             fs::write(dest_dir.join("tvshow.nfo"), nfo_content)?;
             organize_files(video_files, &dest_dir, &show_name).await?;
-            println!("Successfully processed '{}'.", show_name);
+            println!("Successfully processed '{show_name}'.");
         }
     }
 
