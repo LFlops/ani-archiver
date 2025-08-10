@@ -100,11 +100,12 @@ mod tests {
             .with_body(mock_response.to_string())
             .create();
 
-        let client = Client::new();
+        let client = Client::builder().no_proxy().build().expect("Client build failed");
         let result =
             fetch_tv_show_details_with_client(&client, &mockito::server_url(), api_key, tv_show_id)
                 .await;
 
+        dbg!(&result);
         assert!(result.is_ok());
         if let Ok(show_details) = result {
             assert_eq!(show_details.id, tv_show_id);
@@ -124,7 +125,7 @@ mod tests {
                     "id": 1399,
                     "name": "Game of Thrones",
                     "first_air_date": "2011-04-17",
-                    "overview": "The best show ever" // <-- 这行已修改
+                    "overview": "The best show ever"
                 }
             ]
         });
@@ -137,10 +138,9 @@ mod tests {
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body(mock_response.to_string())
-            .create()
-            .with_body(mock_response.to_string());
+            .create();
 
-        let client = Client::new();
+        let client = Client::builder().no_proxy().build().expect("Client build failed");
         let result =
             search_tv_shows_with_client(&client, &mockito::server_url(), api_key, query).await;
 
@@ -152,7 +152,7 @@ mod tests {
             assert_eq!(
                 search_response.results[0].overview,
                 Some("The best show ever".to_string())
-            ); // 增加对 overview 的断言
+            );
         }
     }
 
@@ -161,7 +161,7 @@ mod tests {
         let tv_show_id = 999999; // 不存在的ID
         let api_key = "test_key";
 
-        let _m = mock("GET", format!("/3/tv/{}", tv_show_id).as_str())
+        let _m = mock("GET", format!("/tv/{}", tv_show_id).as_str())
             .match_query(mockito::Matcher::UrlEncoded(
                 "api_key".into(),
                 api_key.into(),
@@ -169,7 +169,7 @@ mod tests {
             .with_status(404)
             .create();
 
-        let client = Client::new();
+        let client = Client::builder().no_proxy().build().expect("Client build failed");
         let result =
             fetch_tv_show_details_with_client(&client, &mockito::server_url(), api_key, tv_show_id)
                 .await;

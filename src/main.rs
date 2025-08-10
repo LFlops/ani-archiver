@@ -72,7 +72,7 @@ async fn process_show(
     client: &Client,
     api_key: &str,
     tmdb_id: u32,
-) -> Result<(TvShowDetails), Box<dyn std::error::Error>> {
+) -> Result<TvShowDetails, Box<dyn std::error::Error>> {
     let show_details = if details_cached {
         fetch_tv_show_details_with_client(&client, API_BASE_URL, &api_key, tmdb_id).await?
     } else {
