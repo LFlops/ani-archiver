@@ -1,19 +1,11 @@
-use reqwest::Client;
 use crate::tmdb::models::{SearchResponse, TvShowDetails};
+use reqwest::Client;
 
 pub mod models;
 pub mod nfo;
 mod scraper;
 
-const API_BASE_URL: &str = "https://api.themoviedb.org/3";
-
-// 重构函数以支持测试
-pub async fn fetch_tv_show_details(
-    api_key: &str,
-    tv_show_id: u32,
-) -> Result<TvShowDetails, reqwest::Error> {
-    fetch_tv_show_details_with_client(&Client::new(), API_BASE_URL, api_key, tv_show_id).await
-}
+pub const API_BASE_URL: &str = "https://api.themoviedb.org/3";
 
 // 可测试版本的函数，允许注入client和base_url
 pub async fn fetch_tv_show_details_with_client(
@@ -30,10 +22,6 @@ pub async fn fetch_tv_show_details_with_client(
         .await?
         .json::<TvShowDetails>()
         .await
-}
-
-pub async fn search_tv_shows(api_key: &str, query: &str) -> Result<SearchResponse, reqwest::Error> {
-    search_tv_shows_with_client(&Client::new(), API_BASE_URL, api_key, query).await
 }
 
 // 可测试版本的函数，允许注入client和base_url
@@ -103,19 +91,19 @@ mod tests {
         });
 
         let _m = mock("GET", format!("/tv/{}", tv_show_id).as_str())
-            .match_query(mockito::Matcher::UrlEncoded("api_key".into(), api_key.into()))
+            .match_query(mockito::Matcher::UrlEncoded(
+                "api_key".into(),
+                api_key.into(),
+            ))
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body(mock_response.to_string())
             .create();
 
         let client = Client::new();
-        let result = fetch_tv_show_details_with_client(
-            &client,
-            &mockito::server_url(),
-            api_key,
-            tv_show_id
-        ).await;
+        let result =
+            fetch_tv_show_details_with_client(&client, &mockito::server_url(), api_key, tv_show_id)
+                .await;
 
         assert!(result.is_ok());
         if let Ok(show_details) = result {
@@ -131,40 +119,40 @@ mod tests {
         let api_key = "test_key";
 
         let mock_response = json!({
-        "results": [
-            {
-                "id": 1399,
-                "name": "Game of Thrones",
-                "first_air_date": "2011-04-17",
-                "overview": "The best show ever" // <-- 这行已修改
-            }
-        ]
-    });
+            "results": [
+                {
+                    "id": 1399,
+                    "name": "Game of Thrones",
+                    "first_air_date": "2011-04-17",
+                    "overview": "The best show ever" // <-- 这行已修改
+                }
+            ]
+        });
 
         let _m = mock("GET", "/search/tv")
             .match_query(mockito::Matcher::AllOf(vec![
                 mockito::Matcher::UrlEncoded("api_key".into(), api_key.into()),
-                mockito::Matcher::UrlEncoded("query".into(), query.into())
+                mockito::Matcher::UrlEncoded("query".into(), query.into()),
             ]))
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body(mock_response.to_string())
-            .create()    .with_body(mock_response.to_string());
+            .create()
+            .with_body(mock_response.to_string());
 
         let client = Client::new();
-        let result = search_tv_shows_with_client(
-            &client,
-            &mockito::server_url(),
-            api_key,
-            query
-        ).await;
+        let result =
+            search_tv_shows_with_client(&client, &mockito::server_url(), api_key, query).await;
 
         assert!(result.is_ok());
         if let Ok(search_response) = result {
             assert_eq!(search_response.results.len(), 1);
             assert_eq!(search_response.results[0].id, 1399);
             assert_eq!(search_response.results[0].name, "Game of Thrones");
-            assert_eq!(search_response.results[0].overview, Some("The best show ever".to_string())); // 增加对 overview 的断言
+            assert_eq!(
+                search_response.results[0].overview,
+                Some("The best show ever".to_string())
+            ); // 增加对 overview 的断言
         }
     }
 
@@ -174,17 +162,17 @@ mod tests {
         let api_key = "test_key";
 
         let _m = mock("GET", format!("/3/tv/{}", tv_show_id).as_str())
-            .match_query(mockito::Matcher::UrlEncoded("api_key".into(), api_key.into()))
+            .match_query(mockito::Matcher::UrlEncoded(
+                "api_key".into(),
+                api_key.into(),
+            ))
             .with_status(404)
             .create();
 
         let client = Client::new();
-        let result = fetch_tv_show_details_with_client(
-            &client,
-            &mockito::server_url(),
-            api_key,
-            tv_show_id
-        ).await;
+        let result =
+            fetch_tv_show_details_with_client(&client, &mockito::server_url(), api_key, tv_show_id)
+                .await;
 
         assert!(result.is_err());
     }

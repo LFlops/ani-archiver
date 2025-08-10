@@ -29,7 +29,7 @@ pub struct Genre {
 pub struct TvShowDetails {
     pub id: u32,
     pub name: String,
-    #[serde(deserialize_with = "deserialize_null_string")]
+    // #[serde(deserialize_with = "deserialize_null_string")]
     pub overview: String,
     #[serde(default)]
     pub genres: Vec<Genre>,

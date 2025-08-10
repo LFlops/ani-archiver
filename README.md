@@ -29,7 +29,12 @@ A command-line tool to scrape TV show information from The Movie Database (TMDB)
     ```bash
     cargo run -- --source /path/to/your/shows --dest /path/to/organized/shows
     ```
-
+4. **result **
+* when program run successfully, it will output a message like this:
+```shell
+    - .nfo file created for show
+    - .processed.json file created for marker the processed
+```
 ## Testing and Coverage
 
 This project uses `cargo test` for running unit and integration tests.

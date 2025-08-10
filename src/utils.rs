@@ -22,6 +22,7 @@ pub fn get_file_hash(path: &Path) -> Result<String, io::Error> {
 
 
 pub fn extract_episode_info(filename: &str) -> Option<(String, String)> {
+    // todo 修改为根据字幕组匹配规则
     let re = Regex::new(r"[sS](\d{1,2})[eE](\d{1,2})|(\d{1,2})").unwrap();
     if let Some(caps) = re.captures(filename) {
         if let Some(s) = caps.get(1) {

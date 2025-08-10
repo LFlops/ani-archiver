@@ -1,16 +1,21 @@
 mod tmdb;
 mod utils;
 
-use clap::Parser;
+use crate::tmdb::models::TvShowDetails;
 use dotenv::dotenv;
+use reqwest::Client;
 use std::env;
 use std::fs;
-use std::os::unix::fs::symlink;
+use std::fs::hard_link;
 use std::path::PathBuf;
-use tmdb::models::{Args, ProcessedMarker};
+use tmdb::models::ProcessedMarker;
 use tmdb::nfo::create_tv_show_nfo;
-use tmdb::{choose_from_results, fetch_tv_show_details, search_tv_shows};
+use tmdb::{
+    choose_from_results, fetch_tv_show_details_with_client, search_tv_shows_with_client,
+    API_BASE_URL,
+};
 use utils::{extract_episode_info, get_file_hash};
+
 //创建一个类型，用于存放从环境变量中获取的API密钥/Source/Dest 等
 async fn local_env() -> (String, PathBuf, PathBuf) {
     let api_key = env::var("TMDB_API_KEY").expect("TMDB_API_KEY not set");
@@ -61,6 +66,98 @@ async fn check_processed(
     }
     Ok((tmdb_id, details_cached))
 }
+
+async fn process_show(
+    details_cached: bool,
+    client: &Client,
+    api_key: &str,
+    tmdb_id: u32,
+) -> Result<(TvShowDetails), Box<dyn std::error::Error>> {
+    let show_details = if details_cached {
+        fetch_tv_show_details_with_client(&client, API_BASE_URL, &api_key, tmdb_id).await?
+    } else {
+        println!("Fetching details for TMDB ID {}...", tmdb_id);
+        let details =
+            fetch_tv_show_details_with_client(&client, API_BASE_URL, &api_key, tmdb_id).await?;
+        details
+    };
+    Ok(show_details)
+}
+async fn check_tmdb_id(
+    tmdb_id: &mut u32,
+    client: &Client,
+    show_name: &str,
+    api_key: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if *tmdb_id == 0 {
+        println!("\nSearching TMDB for '{}'...", show_name);
+        let search_results =
+            search_tv_shows_with_client(client, API_BASE_URL, api_key, show_name).await?;
+        if search_results.results.is_empty() {
+            println!("No results found. Skipping.");
+            return Err(Box::new(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                format!("No TMDB results found for show: {}", show_name),
+            )));
+        }
+        // todo 通过管道与其他逻辑节藕，避免阻塞整体。
+        *tmdb_id = choose_from_results(search_results)?;
+    }
+    Ok(())
+}
+async fn write_marker(
+    marker_file_path: &PathBuf,
+    dest_dir: &PathBuf,
+    tmdb_id: u32,
+    current_file_hashes: Vec<String>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    // Create marker file for persistence
+    let marker = ProcessedMarker {
+        tmdb_id,
+        file_hashes: current_file_hashes,
+    };
+    let marker_content = serde_json::to_string(&marker)?;
+    fs::create_dir_all(&dest_dir)?;
+    fs::write(&marker_file_path, marker_content)?;
+    Ok(())
+}
+async fn organize_files(
+    video_files: Vec<PathBuf>,
+    dest_dir: &PathBuf,
+    show_name: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    println!("  Organizing files...");
+    for video_file in video_files {
+        if let Some(file_name) = video_file.file_name().and_then(|s| s.to_str()) {
+            if let Some((s_num, e_num)) = extract_episode_info(file_name) {
+                let new_file_name = format!(
+                    "{} S{}E{}.{}",
+                    show_name,
+                    s_num,
+                    e_num,
+                    video_file.extension().unwrap().to_str().unwrap()
+                );
+                let hard_link_path = dest_dir.join(&new_file_name);
+
+                // Check if file already exists to avoid errors on re-run
+                if hard_link_path.exists() {
+                    fs::remove_file(&hard_link_path)?;
+                }
+
+                // Create a hard link
+                // todo 根据dest和source进行对比，优先使用硬链接，如果文件系统不同，则使用软链接，并给出提示。
+                hard_link(&video_file, &hard_link_path)?;
+                println!("    Created hard link: {}", hard_link_path.display());
+            } else {
+                println!(
+                    "    Skipping '{}': Could not extract episode info.",
+                    file_name
+                );
+            }
+        }
+    }
+    Ok(())
+}
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenv().ok();
@@ -85,68 +182,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let (mut tmdb_id, details_cached) =
                 check_processed(&marker_file_path, &current_file_hashes, &show_name).await?;
 
-            if tmdb_id == 0 {
-                println!("\nSearching TMDB for '{}'...", show_name);
-                let search_results = search_tv_shows(&api_key, &show_name).await?;
-                if search_results.results.is_empty() {
-                    println!("  No results found. Skipping.");
+            match check_tmdb_id(&mut tmdb_id, &client, &show_name, &api_key).await {
+                Ok(_) => {}
+                Err(e) => {
+                    println!("Error: {}", e);
                     continue;
                 }
-                tmdb_id = choose_from_results(search_results)?;
             }
 
-            let show_details = if details_cached {
-                fetch_tv_show_details(&api_key, tmdb_id).await?
-            } else {
-                println!("Fetching details for TMDB ID {}...", tmdb_id);
-                let details = fetch_tv_show_details(&api_key, tmdb_id).await?;
-
-                // Create marker file for persistence
-                let marker = ProcessedMarker {
-                    tmdb_id,
-                    file_hashes: current_file_hashes,
-                };
-                let marker_content = serde_json::to_string(&marker)?;
-                fs::create_dir_all(&dest_dir)?;
-                fs::write(&marker_file_path, marker_content)?;
-
-                details
-            };
+            let show_details = process_show(details_cached, &client, &api_key, tmdb_id).await?;
+            write_marker(&marker_file_path, &dest_dir, tmdb_id, current_file_hashes).await?;
 
             fs::create_dir_all(&dest_dir)?;
             let nfo_content = create_tv_show_nfo(&show_details);
             fs::write(dest_dir.join("tvshow.nfo"), nfo_content)?;
-
-            println!("  Organizing files...");
-            for video_file in video_files {
-                if let Some(file_name) = video_file.file_name().and_then(|s| s.to_str()) {
-                    if let Some((s_num, e_num)) = extract_episode_info(file_name) {
-                        let new_file_name = format!(
-                            "{} S{}E{}.{}",
-                            show_name,
-                            s_num,
-                            e_num,
-                            video_file.extension().unwrap().to_str().unwrap()
-                        );
-                        let hard_link_path = dest_dir.join(&new_file_name);
-
-                        // Check if file already exists to avoid errors on re-run
-                        if hard_link_path.exists() {
-                            fs::remove_file(&hard_link_path)?;
-                        }
-
-                        // Create a symbolic link
-                        symlink(&video_file, &hard_link_path)?;
-                        println!("    Created hard link: {}", hard_link_path.display());
-                    } else {
-                        println!(
-                            "    Skipping '{}': Could not extract episode info.",
-                            file_name
-                        );
-                    }
-                }
-            }
-
+            organize_files(video_files, &dest_dir, &show_name).await?;
             println!("Successfully processed '{}'.", show_name);
         }
     }
