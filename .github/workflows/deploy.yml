@@ -3,7 +3,7 @@ name: Deploy to Kubernetes
 on:
   push:
     branches:
-      - main # 当代码推送到 main 分支时触发此工作流
+      - main
       - develop
 
 jobs:
@@ -11,53 +11,29 @@ jobs:
     runs-on: self-hosted
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        # 建议使用最新的主版本
+        uses: actions/checkout@v4
 
       # --- 1. 设置环境变量 ---
-      # 这里我们将 K8s 的配置信息作为环境变量注入，以供后续步骤使用
-      - name: Set environment variables
+      # 注意：直接将 Secret 写入文件可能存在安全风险。
+      # 对于 Kubernetes，更推荐的做法是使用 k8s Secret 对象管理敏感信息。
+      - name: Create environment files from secrets
         run: |
-          echo "APP_PORT=${{ secrets.APP_PORT }}" > app-config.env
-          echo "TMDB_API_KEY=${{ secrets.TMDB_API_KEY }}" > app-secret.env
+          echo "APP_PORT=${{ secrets.APP_PORT }}" > ./app-config.env
+          echo "TMDB_API_KEY=${{ secrets.TMDB_API_KEY }}" > ./app-secret.env
 
-
-      # --- 3. 构建和推送 Docker 镜像 ---
-      - name: Build and push Docker image
+      # --- 2. 构建本地 Docker 镜像 (不推送) ---
+      - name: Build Docker image locally
         id: docker_build
-        uses: docker/build-push-action@v4
+        # 建议使用最新的主版本
+        uses: docker/build-push-action@v6
         with:
           context: .
           file: ./Dockerfile
-          push: true
-          tags: ${{ secrets.DOCKERHUB_USERNAME }}/ani-archiver:latest
-      # --- 2. 登录 Docker Hub ---
-#      - name: Login to Docker Hub
-#        uses: docker/login-action@v2
-#        with:
-#          username: ${{ secrets.DOCKERHUB_USERNAME }}
-#          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          # a. 关键修改：禁止推送到远程仓库
+          push: false
+          # b. 关键修改：将镜像加载到本地 Docker 中
+          load: true
+          # c. 标签依然需要，供本地引用。可以简化命名。
+          tags: ani-archiver:latest
 
-      # --- 4. 设置 Kubernetes 环境 ---
-#      - name: Set up Kubernetes context
-#        uses: azure/k8s-set-context@v1
-#        with:
-#          kubeconfig: ${{ secrets.KUBE_CONFIG }}
-
-#      # --- 5. 设置镜像 ---
-#      - name: Set image
-#        run: |
-#          sed -i "s|image: .*|image: ${{ secrets.DOCKERHUB_USERNAME }}/ani-archiver:latest|g" deployment.yaml
-#
-#      # --- 6. 部署到 Kubernetes ---
-#      - name: Deploy to Kubernetes
-#        run: |
-#          # 创建或更新 ConfigMap
-#          kubectl create configmap ani-archiver-config --from-env-file=app-config.env --dry-run=client -o yaml | kubectl apply -f -
-#
-#          # 创建或更新 Secret
-#          kubectl create secret generic ani-archiver-secret --from-env-file=app-secret.env --dry-run=client -o yaml | kubectl apply -f -
-#
-#          # 应用 Kubernetes 部署文件
-#          kubectl apply -f deployment.yaml
-#
-#          echo "Deployment complete!"
