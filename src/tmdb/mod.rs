@@ -12,6 +12,7 @@ pub async fn process_show(
     api_key: &str,
     tmdb_id: u32,
 ) -> Result<TvShowDetails, Box<dyn std::error::Error>> {
+    // todo 语言设定为中文
     let show_details = if details_cached {
         fetch_tv_show_details_with_client(client, API_BASE_URL, api_key, tmdb_id).await?
     } else {
@@ -31,16 +32,56 @@ pub async fn check_tmdb_id(
         return Ok(*tmdb_id);
     }
 
+    // 同时搜索 movie 和 tv
     println!("\nSearching TMDB for '{show_name}'...");
-    let search_results =
-        search_tv_shows_with_client(client, API_BASE_URL, api_key, show_name).await?;
-    if search_results.results.is_empty() {
+
+    // 并行搜索电视节目和电影
+    let tv_search = search_tv_shows_with_client(client, API_BASE_URL, api_key, show_name);
+    let movie_search = search_movies_with_client(client, API_BASE_URL, api_key, show_name);
+
+    let (tv_results, movie_results) = tokio::join!(tv_search, movie_search);
+
+    let mut all_results = Vec::new();
+
+    // 处理电视节目搜索结果
+    match tv_results {
+        Ok(tv_res) => {
+            println!("Found {} TV shows", tv_res.results.len());
+            all_results.extend(tv_res.results);
+        }
+        Err(e) => {
+            eprintln!("Error searching for TV shows: {e}");
+        }
+    }
+
+    // 处理电影搜索结果
+    match movie_results {
+        Ok(movie_res) => {
+            println!("Found {} movies", movie_res.results.len());
+            all_results.extend(movie_res.results);
+        }
+        Err(e) => {
+            eprintln!("Error searching for movies: {e}");
+        }
+    }
+
+    // 如果没有找到任何结果
+    if all_results.is_empty() {
         println!("No results found. Skipping.");
         return Err(Box::new(std::io::Error::new(
             std::io::ErrorKind::NotFound,
             format!("No TMDB results found for show: {show_name}"),
         )));
     }
+
+    // 创建一个新的SearchResponse包含所有结果
+    let search_results = SearchResponse {
+        page: 1,
+        results: all_results,
+        total_pages: 1,
+        total_results: 1,
+    };
+
     // todo 通过管道与其他逻辑节藕，避免阻塞整体。
 
     let mut stdout = io::stdout();
@@ -77,6 +118,28 @@ pub async fn search_tv_shows_with_client(
         .expect("cannot be base")
         .push("search")
         .push("tv");
+
+    client
+        .get(url)
+        .query(&[("api_key", api_key), ("query", query)])
+        .send()
+        .await?
+        .json::<SearchResponse>()
+        .await
+}
+
+// 可测试版本的函数，允许注入client和base_url
+pub async fn search_movies_with_client(
+    client: &Client,
+    base_url: &str,
+    api_key: &str,
+    query: &str,
+) -> Result<SearchResponse, reqwest::Error> {
+    let mut url = Url::parse(base_url).expect("Failed to parse base_url");
+    url.path_segments_mut()
+        .expect("cannot be base")
+        .push("search")
+        .push("movie");
 
     client
         .get(url)
