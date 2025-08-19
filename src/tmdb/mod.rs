@@ -79,10 +79,9 @@ pub async fn query_tmdb_id(
 
     while let Some(result) = join_set.join_next().await {
         match result {
-            Ok(Ok(page)) => {
-                all_results.results.extend(page.results);
+            Ok(page) => {
+                all_results.results.extend(page?.results);
             }
-            Ok(Err(_)) => {}
             Err(e) => {
                 eprintln!("Error fetching page: {}", e);
             }
