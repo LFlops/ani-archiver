@@ -68,7 +68,7 @@ pub async fn query_tmdb_id(
     let mut all_results = fetch_page_with_retry(client, API_BASE_URL, 0, &queries).await?;
     let mut join_set = JoinSet::new();
     if all_results.total_pages > 1 {
-        for page_num in 2..all_results.total_pages {
+        for page_num in 2..=all_results.total_pages {
             let client_node = client.clone();
             let queries_clone = queries.clone();
             join_set.spawn(async move {
