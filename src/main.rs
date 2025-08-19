@@ -1,10 +1,11 @@
 mod file;
+mod regex_parser;
 mod tmdb;
 mod utils;
 
 use crate::file::cache::check_processed;
 use crate::file::{organize_files, write_marker};
-use crate::tmdb::{check_tmdb_id, process_show};
+use crate::tmdb::{check_tmdb_id, process_show, query_tmdb_id};
 use crate::utils::hash_files;
 use dotenv::dotenv;
 use file::nfo::create_tv_show_nfo;
@@ -52,8 +53,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let marker_file_path = dest_dir.join(".processed.json");
             let (mut tmdb_id, details_cached) =
                 check_processed(&marker_file_path, &current_file_hashes, &show_name).await?;
+            if !check_tmdb_id(&tmdb_id) {
+                continue;
+            }
 
-            tmdb_id = match check_tmdb_id(&tmdb_id, &client, &show_name, &api_key).await {
+            tmdb_id = match query_tmdb_id(&client, &show_name).await {
                 Ok(tmdb_id) => tmdb_id,
                 Err(e) => {
                     println!("Error fetching TMDB ID for '{show_name}': {e}");

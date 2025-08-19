@@ -1,7 +1,9 @@
 use crate::utils::deserialize_null_string;
 use clap::Parser;
-use serde::Deserialize;
+use reqwest::StatusCode;
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+use thiserror::Error;
 
 /// A tool to scrape, organize, and create hard links for TV shows.
 #[derive(Parser, Debug)]
@@ -39,11 +41,14 @@ pub struct TvShowDetails {
 
 #[derive(Debug, Deserialize)]
 #[allow(dead_code)]
-pub struct TvShowSearchResult {
+pub struct SearchMultiResult {
     pub id: u32,
+    pub title: String,
     pub name: String,
-    pub first_air_date: Option<String>,
+    pub original_title: String,
     pub overview: Option<String>,
+    pub media_type: String,
+    pub first_air_date: Option<String>,
     pub adult: bool,
     pub backdrop_path: Option<String>,
     pub genre_ids: Vec<u32>,
@@ -55,12 +60,30 @@ pub struct TvShowSearchResult {
     pub vote_average: f64,
     pub vote_count: u32,
 }
-
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
+pub enum MediaType {
+    #[serde(rename = "movie")]
+    MOVIE,
+    #[serde(rename = "tv")]
+    TV,
+}
 #[derive(Debug, Deserialize)]
 #[allow(dead_code)]
-pub struct SearchResponse {
+pub struct SearchResponse<T> {
     pub page: u32,
-    pub results: Vec<TvShowSearchResult>,
+    pub results: Vec<T>,
     pub total_pages: u32,
     pub total_results: u32,
+}
+
+#[derive(Debug, Error)]
+pub enum FetchError {
+    #[error("请求错误:{0}")]
+    REQWEST(#[from] reqwest::Error),
+
+    #[error("API 返回了不可恢复的错误状态码:{0}")]
+    UnrecoverableStatus(StatusCode),
+
+    #[error("重试了{max_retries} 次后仍然失败")]
+    MaxRetriesExceeded { max_retries: u32 },
 }

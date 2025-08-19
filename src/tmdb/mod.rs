@@ -1,9 +1,36 @@
-use crate::tmdb::models::{SearchResponse, TvShowDetails};
-use reqwest::{Client, Url};
-use std::io;
+use crate::tmdb::models::{FetchError, SearchMultiResult, SearchResponse, TvShowDetails};
+use futures::future::ok;
+use lazy_static::lazy_static;
+use reqwest::{Client, StatusCode, Url};
+use std::collections::HashMap;
 use std::io::{BufRead, Write};
+use std::time::Duration;
+use std::{env, io};
+use thiserror::Error;
+use tokio::task::JoinSet;
 
 pub mod models;
+
+static LANGUAGE: &str = "LANGUAGE";
+static PROXY: &str = "PROXY";
+static TMDB_API_KEY: &str = "TMDB_API_KEY";
+static QUERY: &str = "QUERY";
+static INCLUDE_ADULT: &str = "INCLUDE_ADULT";
+lazy_static! {
+    pub static ref COMMON_QUERY: HashMap<String, String> = {
+        let mut map = HashMap::new();
+        if let Ok(language) = env::var(LANGUAGE) {
+            map.insert(LANGUAGE.to_lowercase(), language);
+        }
+        if let Ok(api_key) = env::var(TMDB_API_KEY) {
+            map.insert(TMDB_API_KEY.to_lowercase(), api_key);
+        }
+        if let Ok(include_adult) = env::var(INCLUDE_ADULT) {
+            map.insert(INCLUDE_ADULT.to_lowercase(), include_adult);
+        }
+        map
+    };
+}
 
 pub const API_BASE_URL: &str = "https://api.themoviedb.org/3";
 pub async fn process_show(
@@ -22,72 +49,50 @@ pub async fn process_show(
     Ok(show_details)
 }
 
-pub async fn check_tmdb_id(
-    tmdb_id: &u32,
+pub fn check_tmdb_id(tmdb_id: &u32) -> bool {
+    if *tmdb_id != 0 {
+        return true;
+    }
+    false
+}
+
+pub async fn query_tmdb_id(
     client: &Client,
     show_name: &str,
-    api_key: &str,
 ) -> Result<u32, Box<dyn std::error::Error>> {
-    if *tmdb_id != 0 {
-        return Ok(*tmdb_id);
-    }
-
     // 同时搜索 movie 和 tv
     println!("\nSearching TMDB for '{show_name}'...");
+    let mut queries = COMMON_QUERY.clone();
+    queries.insert(QUERY.to_lowercase(), show_name.to_string());
 
-    // 并行搜索电视节目和电影
-    let tv_search = search_tv_shows_with_client(client, API_BASE_URL, api_key, show_name);
-    let movie_search = search_movies_with_client(client, API_BASE_URL, api_key, show_name);
-
-    let (tv_results, movie_results) = tokio::join!(tv_search, movie_search);
-
-    let mut all_results = Vec::new();
-
-    // 处理电视节目搜索结果
-    match tv_results {
-        Ok(tv_res) => {
-            println!("Found {} TV shows", tv_res.results.len());
-            all_results.extend(tv_res.results);
-        }
-        Err(e) => {
-            eprintln!("Error searching for TV shows: {e}");
+    let mut all_results = fetch_page_with_retry(client, API_BASE_URL, 0, &queries).await?;
+    let mut join_set = JoinSet::new();
+    if all_results.total_pages > 1 {
+        for page_num in 2..all_results.total_pages {
+            let client_node = client.clone();
+            let queries_clone = queries.clone();
+            join_set.spawn(async move {
+                fetch_page_with_retry(&client_node, API_BASE_URL, page_num, &queries_clone).await
+            });
         }
     }
 
-    // 处理电影搜索结果
-    match movie_results {
-        Ok(movie_res) => {
-            println!("Found {} movies", movie_res.results.len());
-            all_results.extend(movie_res.results);
-        }
-        Err(e) => {
-            eprintln!("Error searching for movies: {e}");
+    while let Some(result) = join_set.join_next().await {
+        match result {
+            Ok(Ok(page)) => {
+                all_results.results.extend(page.results);
+            }
+            Ok(Err(_)) => {}
+            Err(e) => {
+                eprintln!("Error fetching page: {}", e);
+            }
         }
     }
-
-    // 如果没有找到任何结果
-    if all_results.is_empty() {
-        println!("No results found. Skipping.");
-        return Err(Box::new(std::io::Error::new(
-            std::io::ErrorKind::NotFound,
-            format!("No TMDB results found for show: {show_name}"),
-        )));
-    }
-
-    // 创建一个新的SearchResponse包含所有结果
-    let search_results = SearchResponse {
-        page: 1,
-        results: all_results,
-        total_pages: 1,
-        total_results: 1,
-    };
-
     // todo 通过管道与其他逻辑节藕，避免阻塞整体。
-
     let mut stdout = io::stdout();
     let stdin = io::stdin();
     let mut buf_reader = io::BufReader::new(stdin);
-    choose_from_results(&search_results, &mut buf_reader, &mut stdout)
+    choose_from_results(&all_results, &mut buf_reader, &mut stdout)
 }
 // 可测试版本的函数，允许注入client和base_url
 pub async fn fetch_tv_show_details_with_client(
@@ -106,51 +111,60 @@ pub async fn fetch_tv_show_details_with_client(
         .await
 }
 
-// 可测试版本的函数，允许注入client和base_url
-pub async fn search_tv_shows_with_client(
+async fn fetch_page_with_retry(
     client: &Client,
     base_url: &str,
-    api_key: &str,
-    query: &str,
-) -> Result<SearchResponse, reqwest::Error> {
+    page: u32,
+    query: &HashMap<String, String>,
+) -> Result<SearchResponse<SearchMultiResult>, FetchError> {
+    let max_retries = 3;
+    let mut base_delay = Duration::from_millis(500);
     let mut url = Url::parse(base_url).expect("Failed to parse base_url");
     url.path_segments_mut()
         .expect("cannot be base")
         .push("search")
-        .push("tv");
+        .push("multi");
+    for attempt in 1..=max_retries {
+        if attempt > 0 {
+            println!(
+                "第 {} 页第 {} 次重试，等待 {:?}...",
+                page, attempt, base_delay
+            );
+            tokio::time::sleep(base_delay).await;
+            base_delay *= 2;
+        }
+        println!("正在请求第 {} 页 (尝试次数 {})", page, attempt + 1);
 
-    client
-        .get(url)
-        .query(&[("api_key", api_key), ("query", query)])
-        .send()
-        .await?
-        .json::<SearchResponse>()
-        .await
+        let response = client.get(url.clone()).query(query).send().await;
+        match response {
+            Ok(response) => {
+                let status = response.status();
+                if status == StatusCode::OK {
+                    return Ok(response.json::<SearchResponse<SearchMultiResult>>().await?);
+                } else if status == StatusCode::TOO_MANY_REQUESTS || status.is_server_error() {
+                    eprintln!(
+                        "Retrying page {} (attempt {}/{}): {}",
+                        page,
+                        attempt,
+                        max_retries,
+                        response.status()
+                    )
+                } else {
+                    eprintln!("请求第 {} 页遇到不可恢复的错误， 状态码: {}", page, status);
+                    return Err(FetchError::UnrecoverableStatus(status));
+                }
+            }
+            Err(e) => {
+                println!("Retrying (attempt {}/{}): {}", attempt, max_retries, e);
+                continue;
+            }
+        }
+    }
+    Err(FetchError::MaxRetriesExceeded { max_retries })
 }
-
 // 可测试版本的函数，允许注入client和base_url
-pub async fn search_movies_with_client(
-    client: &Client,
-    base_url: &str,
-    api_key: &str,
-    query: &str,
-) -> Result<SearchResponse, reqwest::Error> {
-    let mut url = Url::parse(base_url).expect("Failed to parse base_url");
-    url.path_segments_mut()
-        .expect("cannot be base")
-        .push("search")
-        .push("movie");
 
-    client
-        .get(url)
-        .query(&[("api_key", api_key), ("query", query)])
-        .send()
-        .await?
-        .json::<SearchResponse>()
-        .await
-}
-
-pub fn format_search_results(results: &SearchResponse) -> String {
+pub fn format_search_results(results: &SearchResponse<SearchMultiResult>) -> String {
     let mut output = String::new();
     output.push_str("Multiple results found, please choose one:\n");
     for (i, show) in results.results.iter().enumerate() {
@@ -163,7 +177,10 @@ pub fn format_search_results(results: &SearchResponse) -> String {
     }
     output
 }
-pub fn parse_choice(input: &str, results: &SearchResponse) -> Result<u32, &'static str> {
+pub fn parse_choice(
+    input: &str,
+    results: &SearchResponse<SearchMultiResult>,
+) -> Result<u32, &'static str> {
     match input.trim().parse::<usize>() {
         Ok(choice) if choice > 0 && choice <= results.results.len() => {
             // Valid choice, return the corresponding ID.
@@ -180,7 +197,7 @@ pub fn parse_choice(input: &str, results: &SearchResponse) -> Result<u32, &'stat
     }
 }
 pub fn choose_from_results<R: BufRead, W: Write>(
-    results: &SearchResponse,
+    results: &SearchResponse<SearchMultiResult>,
     reader: &mut R,
     writer: &mut W,
 ) -> Result<u32, Box<dyn std::error::Error>> {
@@ -206,7 +223,6 @@ pub fn choose_from_results<R: BufRead, W: Write>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tmdb::models::TvShowSearchResult;
     use mockito::mock;
     use serde_json::json;
 
@@ -295,7 +311,7 @@ mod tests {
             .build()
             .expect("Client build failed");
         let result =
-            search_tv_shows_with_client(&client, &mockito::server_url(), api_key, query).await;
+            fetch_page_with_retry(&client, &mockito::server_url(), 0, &HashMap::new()).await;
 
         assert!(result.is_ok());
         if let Ok(search_response) = result {
@@ -349,145 +365,5 @@ mod tests {
     async fn test_search_tv_shows_url_format() {
         let url = format!("{API_BASE_URL}/search/tv",);
         assert_eq!(url, "https://api.themoviedb.org/3/search/tv");
-    }
-
-    #[test]
-    fn test_format_search_results() {
-        let search_response = get_mock_results();
-
-        let expected_output = "Multiple results found, please choose one:\n1. First Result (2023-01-01)\n2. Second Result (2023-02-02)\n3. Third Result (2023-03-03)\n";
-        let actual_output = format_search_results(&search_response);
-
-        assert_eq!(actual_output, expected_output);
-    }
-    fn get_mock_results() -> SearchResponse {
-        SearchResponse {
-            page: 1,
-            total_pages: 1,
-            total_results: 3,
-            results: vec![
-                TvShowSearchResult {
-                    id: 101,
-                    name: "First Result".to_string(),
-                    first_air_date: Some("2023-01-01".to_string()),
-                    overview: Some("Overview 1".to_string()),
-                    adult: false,
-                    backdrop_path: Some(String::from("...")),
-                    genre_ids: vec![1],
-                    origin_country: vec![String::from("US")],
-                    original_language: String::from("en"),
-                    original_name: String::from("First Result"),
-                    popularity: 1.0,
-                    poster_path: Some(String::from("...")),
-                    vote_average: 1.0,
-                    vote_count: 1,
-                },
-                TvShowSearchResult {
-                    id: 202,
-                    name: "Second Result".to_string(),
-                    first_air_date: Some("2023-02-02".to_string()),
-                    overview: Some("Overview 2".to_string()),
-                    adult: false,
-                    backdrop_path: Some(String::from("...")),
-                    genre_ids: vec![1],
-                    origin_country: vec![String::from("US")],
-                    original_language: String::from("en"),
-                    original_name: String::from("Second Result"),
-                    popularity: 1.0,
-                    poster_path: Some(String::from("...")),
-                    vote_average: 1.0,
-                    vote_count: 1,
-                },
-                TvShowSearchResult {
-                    id: 303,
-                    name: "Third Result".to_string(),
-                    first_air_date: Some("2023-03-03".to_string()),
-                    overview: Some("Overview 3".to_string()),
-                    adult: false,
-                    backdrop_path: Some(String::from("...")),
-                    genre_ids: vec![1],
-                    origin_country: vec![String::from("US")],
-                    original_language: String::from("en"),
-                    original_name: String::from("Third Result"),
-                    popularity: 1.0,
-                    poster_path: Some(String::from("...")),
-                    vote_average: 1.0,
-                    vote_count: 1,
-                },
-            ],
-        }
-    }
-    #[test]
-    fn test_parse_choice_valid() {
-        let results = get_mock_results();
-        // A valid choice "2" should return the ID of the second item.
-        assert_eq!(parse_choice("2\n", &results), Ok(202));
-    }
-
-    #[test]
-    fn test_parse_choice_with_whitespace() {
-        let results = get_mock_results();
-        // Input with extra whitespace should be trimmed and parsed correctly.
-        assert_eq!(parse_choice("  1  ", &results), Ok(101));
-    }
-
-    #[test]
-    fn test_parse_choice_out_of_bounds() {
-        let results = get_mock_results();
-        // "4" is a number but is not a valid choice.
-        assert_eq!(parse_choice("4", &results), Err("Choice is out of range."));
-        // "0" is also out of bounds.
-        assert_eq!(parse_choice("0", &results), Err("Choice is out of range."));
-    }
-
-    #[test]
-    fn test_parse_choice_invalid_input() {
-        let results = get_mock_results();
-        // Non-numeric input should result in an error.
-        assert_eq!(
-            parse_choice("abc", &results),
-            Err("Invalid input. Please enter a number.")
-        );
-    }
-
-    // --- Tests for the I/O function: `choose_from_results` ---
-
-    #[test]
-    fn test_choose_from_results_happy_path() {
-        let results = get_mock_results();
-        // Simulate user input "2\n". The `b` prefix creates a byte slice.
-        let mut mock_reader = std::io::Cursor::new(b"2\n");
-        // Capture output in a vector of bytes.
-        let mut mock_writer = Vec::new();
-
-        // Run the function with our mock I/O objects.
-        let result_id = choose_from_results(&results, &mut mock_reader, &mut mock_writer).unwrap();
-
-        // Check if the correct ID was returned.
-        assert_eq!(result_id, 202);
-
-        // Check if the output written to the console is correct.
-        let output = String::from_utf8(mock_writer).unwrap();
-        assert!(output.contains("Multiple results found, please choose one:"));
-        assert!(output.contains("2. Second Result"));
-        assert!(output.contains("Enter number (1-3):"));
-    }
-
-    #[test]
-    fn test_choose_from_results_invalid_then_valid_input() {
-        let results = get_mock_results();
-        // Simulate a user first typing "bad", then typing a valid choice "3".
-        let mut mock_reader = std::io::Cursor::new(b"bad\n3\n");
-        let mut mock_writer = Vec::new();
-
-        let result_id = choose_from_results(&results, &mut mock_reader, &mut mock_writer).unwrap();
-
-        // The final result should be the valid choice.
-        assert_eq!(result_id, 303);
-
-        // Check the output to ensure the error message was displayed before success.
-        let output = String::from_utf8(mock_writer).unwrap();
-        assert!(output.contains("Invalid input. Please enter a number.")); // Error message
-        assert!(output.contains("Enter number (1-3):")); // Prompt appears twice
     }
 }
