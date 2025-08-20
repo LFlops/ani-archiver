@@ -1,14 +1,13 @@
-use crate::tmdb::models::{FetchError, SearchMultiResult, SearchResponse, TvShowDetails};
-use futures::future::ok;
+use crate::tmdb::api::fetch_multi_page_with_retry;
+use crate::tmdb::models::{SearchMultiResult, SearchResponse, TvShowDetails};
 use lazy_static::lazy_static;
-use reqwest::{Client, StatusCode, Url};
+use reqwest::Client;
 use std::collections::HashMap;
 use std::io::{BufRead, Write};
-use std::time::Duration;
 use std::{env, io};
-use thiserror::Error;
 use tokio::task::JoinSet;
 
+mod api;
 pub mod models;
 
 static LANGUAGE: &str = "LANGUAGE";
@@ -33,22 +32,6 @@ lazy_static! {
 }
 
 pub const API_BASE_URL: &str = "https://api.themoviedb.org/3";
-pub async fn process_show(
-    details_cached: bool,
-    client: &Client,
-    api_key: &str,
-    tmdb_id: u32,
-) -> Result<TvShowDetails, Box<dyn std::error::Error>> {
-    // todo 语言设定为中文
-    let show_details = if details_cached {
-        fetch_tv_show_details_with_client(client, API_BASE_URL, api_key, tmdb_id).await?
-    } else {
-        println!("Fetching details for TMDB ID {tmdb_id}...");
-        fetch_tv_show_details_with_client(client, API_BASE_URL, api_key, tmdb_id).await?
-    };
-    Ok(show_details)
-}
-
 pub fn check_tmdb_id(tmdb_id: &u32) -> bool {
     if *tmdb_id != 0 {
         return true;
@@ -65,14 +48,15 @@ pub async fn query_tmdb_id(
     let mut queries = COMMON_QUERY.clone();
     queries.insert(QUERY.to_lowercase(), show_name.to_string());
 
-    let mut all_results = fetch_page_with_retry(client, API_BASE_URL, 0, &queries).await?;
+    let mut all_results = fetch_multi_page_with_retry(client, API_BASE_URL, 0, &queries).await?;
     let mut join_set = JoinSet::new();
     if all_results.total_pages > 1 {
         for page_num in 2..=all_results.total_pages {
             let client_node = client.clone();
             let queries_clone = queries.clone();
             join_set.spawn(async move {
-                fetch_page_with_retry(&client_node, API_BASE_URL, page_num, &queries_clone).await
+                fetch_multi_page_with_retry(&client_node, API_BASE_URL, page_num, &queries_clone)
+                    .await
             });
         }
     }
@@ -93,6 +77,22 @@ pub async fn query_tmdb_id(
     let mut buf_reader = io::BufReader::new(stdin);
     choose_from_results(&all_results, &mut buf_reader, &mut stdout)
 }
+pub async fn process_show(
+    details_cached: bool,
+    client: &Client,
+    api_key: &str,
+    tmdb_id: u32,
+) -> Result<TvShowDetails, Box<dyn std::error::Error>> {
+    // todo 语言设定为中文
+    let show_details = if details_cached {
+        fetch_tv_show_details_with_client(client, API_BASE_URL, api_key, tmdb_id).await?
+    } else {
+        println!("Fetching details for TMDB ID {tmdb_id}...");
+        fetch_tv_show_details_with_client(client, API_BASE_URL, api_key, tmdb_id).await?
+    };
+    Ok(show_details)
+}
+
 // 可测试版本的函数，允许注入client和base_url
 pub async fn fetch_tv_show_details_with_client(
     client: &Client,
@@ -110,57 +110,6 @@ pub async fn fetch_tv_show_details_with_client(
         .await
 }
 
-async fn fetch_page_with_retry(
-    client: &Client,
-    base_url: &str,
-    page: u32,
-    query: &HashMap<String, String>,
-) -> Result<SearchResponse<SearchMultiResult>, FetchError> {
-    let max_retries = 3;
-    let mut base_delay = Duration::from_millis(500);
-    let mut url = Url::parse(base_url).expect("Failed to parse base_url");
-    url.path_segments_mut()
-        .expect("cannot be base")
-        .push("search")
-        .push("multi");
-    for attempt in 1..=max_retries {
-        if attempt > 0 {
-            println!(
-                "第 {} 页第 {} 次重试，等待 {:?}...",
-                page, attempt, base_delay
-            );
-            tokio::time::sleep(base_delay).await;
-            base_delay *= 2;
-        }
-        println!("正在请求第 {} 页 (尝试次数 {})", page, attempt + 1);
-
-        let response = client.get(url.clone()).query(query).send().await;
-        match response {
-            Ok(response) => {
-                let status = response.status();
-                if status == StatusCode::OK {
-                    return Ok(response.json::<SearchResponse<SearchMultiResult>>().await?);
-                } else if status == StatusCode::TOO_MANY_REQUESTS || status.is_server_error() {
-                    eprintln!(
-                        "Retrying page {} (attempt {}/{}): {}",
-                        page,
-                        attempt,
-                        max_retries,
-                        response.status()
-                    )
-                } else {
-                    eprintln!("请求第 {} 页遇到不可恢复的错误， 状态码: {}", page, status);
-                    return Err(FetchError::UnrecoverableStatus(status));
-                }
-            }
-            Err(e) => {
-                println!("Retrying (attempt {}/{}): {}", attempt, max_retries, e);
-                continue;
-            }
-        }
-    }
-    Err(FetchError::MaxRetriesExceeded { max_retries })
-}
 // 可测试版本的函数，允许注入client和base_url
 
 pub fn format_search_results(results: &SearchResponse<SearchMultiResult>) -> String {
@@ -310,7 +259,7 @@ mod tests {
             .build()
             .expect("Client build failed");
         let result =
-            fetch_page_with_retry(&client, &mockito::server_url(), 0, &HashMap::new()).await;
+            fetch_multi_page_with_retry(&client, &mockito::server_url(), 0, &HashMap::new()).await;
 
         assert!(result.is_ok());
         if let Ok(search_response) = result {

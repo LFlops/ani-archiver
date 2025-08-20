@@ -5,6 +5,14 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use thiserror::Error;
 
+const TV_SHOW_NFO_TEMPLATE: &str = r#"<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<tvshow>
+    <title>{}</title>
+    <originaltitle>{}</originaltitle>
+    <plot>{}</plot>
+    <year>{}</year>
+    <uniqueid type="tmdb">{}</uniqueid>
+</tvshow>"#;
 /// A tool to scrape, organize, and create hard links for TV shows.
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
@@ -43,22 +51,38 @@ pub struct TvShowDetails {
 #[allow(dead_code)]
 pub struct SearchMultiResult {
     pub id: u32,
-    pub title: String,
-    pub name: String,
-    pub original_title: String,
-    pub overview: Option<String>,
-    pub media_type: String,
+    pub overview: String,
+    pub backdrop_path: String,
+    pub poster_path: String,
+    pub media_type: MediaType,
+    // tv use this
+    pub name: Option<String>,
+    pub original_name: Option<String>,
     pub first_air_date: Option<String>,
-    pub adult: bool,
-    pub backdrop_path: Option<String>,
-    pub genre_ids: Vec<u32>,
-    pub origin_country: Vec<String>,
-    pub original_language: String,
-    pub original_name: String,
-    pub popularity: f64,
-    pub poster_path: Option<String>,
-    pub vote_average: f64,
-    pub vote_count: u32,
+    // movie use this
+    pub title: Option<String>,
+    pub original_title: Option<String>,
+    pub release_date: Option<String>,
+}
+
+impl SearchMultiResult {
+    pub fn to_tv_show_nfo(&self) -> Option<String> {
+        if self.media_type != MediaType::TV {
+            return None;
+        }
+        let year = self.first_air_date
+            .as_deref()
+            .and_then(|s| s.split('-').next())
+            .unwrap_or("");
+        Some(format!(
+            TV_SHOW_NFO_TEMPLATE,
+            self.name,
+            self.original_name,
+            self.overview,
+            year,
+            self.id
+        ))
+    }
 }
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub enum MediaType {
