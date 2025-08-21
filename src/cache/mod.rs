@@ -8,6 +8,8 @@ use std::{fs, io};
 
 // todo 用 async io 替换 std io
 const CACHE_FILE_NAME: &str = "cache.json";
+const VIDEO_EXTENSIONS: [&str; 4] = [".mkv", ".mp4", ".avi", ".m4v"];
+const SUBTITLE_EXTENSIONS: [&str; 2] = [".srt", ".ass"];
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub struct Cache {
     pub file_hashes: HashSet<String>,
@@ -70,4 +72,13 @@ fn check_dir_path(path: &Path) -> Result<(), Box<dyn std::error::Error>> {
         )));
     }
     Ok(())
+}
+pub async fn check_file_extensions(file_path: &Path) -> bool {
+    let file_extension = file_path
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .unwrap_or("");
+
+    // todo 支持用户自定义配置
+    VIDEO_EXTENSIONS.contains(&file_extension) || SUBTITLE_EXTENSIONS.contains(&file_extension)
 }
