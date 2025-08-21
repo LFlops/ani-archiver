@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 use std::{fs, io};
 
+// todo 用 async io 替换 std io
 const CACHE_FILE_NAME: &str = "cache.json";
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub struct Cache {
