@@ -6,11 +6,11 @@ mod tmdb;
 use crate::cache::Cache;
 use crate::tmdb::{check_tmdb_id, query_tmdb_id};
 use dotenv::dotenv;
+use log::warn;
 use reqwest::{Client, Proxy};
 use std::env;
 use std::fs;
 use std::path::PathBuf;
-use log::warn;
 
 //创建一个类型，用于存放从环境变量中获取的API密钥/Source/Dest 等
 async fn local_env() -> Result<(String, PathBuf, PathBuf, Option<Proxy>), Box<dyn std::error::Error>>
@@ -66,7 +66,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             cache.write_cache(&dest_dir)?;
             // todo
-            let local_file = local_file::LocalFile::from_env();
+            let local_file = local_file::LocalFile::<PathBuf>::from_env();
             local_file.organize_files(&show_name).await?;
             println!("Successfully processed '{show_name}'.");
         }
