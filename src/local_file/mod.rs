@@ -14,23 +14,16 @@ use std::io;
 
 #[cfg_attr(test, automock)]
 pub(crate) trait StatPath {
-    fn get_device_id(&self) -> io::Result<i32>;
+    fn get_device_id(&self) -> io::Result<u64>;
 }
 
 impl StatPath for PathBuf {
     #[cfg(target_family = "unix")]
-    fn get_device_id(&self) -> io::Result<i32> {
+    fn get_device_id(&self) -> io::Result<u64> {
         let metadata = stat(self)?;
-        Ok(metadata.st_dev)
+        Ok(metadata.st_dev as u64)
     }
-
-    // 辅助函数：在 Windows 上获取设备信息（这里仅作为占位符，需自行实现）
-    // #[cfg(target_family = "windows")]
-    // fn get_device_id(&self) -> io::Result<i32> {
-    //     // 在 Windows 上，需要调用 GetVolumeInformationW 等 API 来获取卷序列号
-    //     // 这个实现会比较复杂，这里简化为 None
-    //     Ok(-1)
-    // }
+    // todo 后续考虑支持 Windows
 }
 
 pub(crate) struct LocalFile<T: StatPath> {
@@ -56,7 +49,7 @@ impl<T: StatPath> LocalFile<T> {
     fn is_same_partition(&self) -> Result<bool, io::Error> {
         let source_id = self.source_dir.get_device_id()?;
         let dest_id = self.dest_dir.get_device_id()?;
-        Ok(source_id == dest_id && source_id != -1 && dest_id != -1)
+        Ok(source_id == dest_id)
     }
 }
 impl<T: StatPath + AsRef<Path>> LocalFile<T> {
@@ -81,21 +74,9 @@ impl<T: StatPath + AsRef<Path>> LocalFile<T> {
                             #[cfg(target_family = "unix")]
                             {
                                 use std::os::unix::fs::symlink;
-                                symlink(&self.source_dir.as_ref(), &self.dest_dir.as_ref())?;
+                                symlink(self.source_dir.as_ref(), self.dest_dir.as_ref())?;
                                 println!("软链接创建成功。");
                             }
-                            // #[cfg(target_family = "windows")]
-                            // {
-                            //     // 在 Windows 上，需要判断是文件还是目录来创建不同的软链接
-                            //     if path1.is_file() {
-                            //         use std::os::windows::fs::symlink_file;
-                            //         symlink_file(&path1, &path2)?;
-                            //     } else {
-                            //         use std::os::windows::fs::symlink_dir;
-                            //         symlink_dir(&path1, &path2)?;
-                            //     }
-                            //     println!("软链接创建成功。");
-                            // }
                         }
                     }
                 }
@@ -147,22 +128,7 @@ mod tests {
             }
         }
     }
-    #[test]
-    fn test_is_same_partition_with_negative_one_return_false() {
-        let mut mock_stat_path = MockStatPath::new();
-        let mut mock_stat_path2 = MockStatPath::new();
-        mock_stat_path.expect_get_device_id().returning(|| Ok(-1));
-        mock_stat_path2.expect_get_device_id().returning(|| Ok(-1));
-        let local_file = LocalFile::new(mock_stat_path, mock_stat_path2);
-        match local_file.is_same_partition() {
-            Ok(result) => {
-                assert!(!result);
-            }
-            Err(err) => {
-                panic!("Error: {}", err);
-            }
-        }
-    }
+
     #[test]
     fn test_is_same_partition_with_different_id_return_false() {
         let mut mock_stat_path = MockStatPath::new();
