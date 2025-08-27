@@ -5,13 +5,14 @@ use std::path::PathBuf;
 mod regex_parser;
 
 use log::{info, warn};
+#[cfg(test)]
 use mockall::automock;
 // 引入 nix crate 以获取文件系统元数据
 #[cfg(target_family = "unix")]
 use nix::sys::stat::stat;
 use std::io;
 
-#[automock]
+#[cfg_attr(test, automock)]
 trait StatPath {
     fn get_device_id(&self) -> io::Result<i32>;
 }
@@ -28,11 +29,11 @@ impl StatPath for PathBuf {
     fn get_device_id(&self) -> io::Result<i32> {
         // 在 Windows 上，需要调用 GetVolumeInformationW 等 API 来获取卷序列号
         // 这个实现会比较复杂，这里简化为 None
-        Ok(None)
+        Ok(-1)
     }
 }
 
-#[automock]
+#[cfg_attr(test, automock)]
 trait PathComparer {
     fn is_same_partition(&self) -> Result<bool, io::Error>;
 }
@@ -47,7 +48,7 @@ impl PathComparer for LocalFile {
         let source_id = &self.source_dir.get_device_id()?;
         let dest_id = &self.dest_dir.get_device_id()?;
         // 检查是否在同一个分区
-        Ok(source_id == dest_id)
+        Ok(source_id == dest_id && *source_id != -1 && *dest_id != -1)
     }
 }
 impl LocalFile {
@@ -115,6 +116,14 @@ impl LocalFile {
 mod tests {
     use super::*;
     // todo 如何 TDD
+
+    #[test]
+    fn test_get_device_id_on_unix_like_system() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let path = PathBuf::from(temp_dir.path());
+        let device_id = path.get_device_id().unwrap();
+        assert!(device_id > 0)
+    }
     #[test]
     fn test_local_file_new_from_env() {
         temp_env::with_vars(
