@@ -132,7 +132,7 @@ mod tests {
     }
 
     #[test]
-    fn test_is_same_partition_return_true() {
+    fn test_is_same_partition_with_same_id_return_true() {
         let mut mock_stat_path = MockStatPath::new();
         let mut mock_stat_path2 = MockStatPath::new();
         mock_stat_path.expect_get_device_id().returning(|| Ok(1));
@@ -141,6 +141,38 @@ mod tests {
         match local_file.is_same_partition() {
             Ok(result) => {
                 assert!(result);
+            }
+            Err(err) => {
+                panic!("Error: {}", err);
+            }
+        }
+    }
+    #[test]
+    fn test_is_same_partition_with_negative_one_return_false() {
+        let mut mock_stat_path = MockStatPath::new();
+        let mut mock_stat_path2 = MockStatPath::new();
+        mock_stat_path.expect_get_device_id().returning(|| Ok(-1));
+        mock_stat_path2.expect_get_device_id().returning(|| Ok(-1));
+        let local_file = LocalFile::new(mock_stat_path, mock_stat_path2);
+        match local_file.is_same_partition() {
+            Ok(result) => {
+                assert!(!result);
+            }
+            Err(err) => {
+                panic!("Error: {}", err);
+            }
+        }
+    }
+    #[test]
+    fn test_is_same_partition_with_different_id_return_false() {
+        let mut mock_stat_path = MockStatPath::new();
+        let mut mock_stat_path2 = MockStatPath::new();
+        mock_stat_path.expect_get_device_id().returning(|| Ok(1));
+        mock_stat_path2.expect_get_device_id().returning(|| Ok(2));
+        let local_file = LocalFile::new(mock_stat_path, mock_stat_path2);
+        match local_file.is_same_partition() {
+            Ok(result) => {
+                assert!(!result);
             }
             Err(err) => {
                 panic!("Error: {}", err);
