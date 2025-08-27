@@ -1,3 +1,4 @@
+use crate::common::check_file_extensions;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::HashSet;
@@ -14,9 +15,6 @@ pub struct Cache {
     pub file_hashes: HashSet<String>,
 }
 impl Cache {
-    pub fn new(file_hashes: HashSet<String>) -> Self {
-        Self { file_hashes }
-    }
     pub fn write_cache(&self, dest_dir: &PathBuf) -> Result<(), Box<dyn std::error::Error>> {
         if !dest_dir.exists() {
             fs::create_dir_all(dest_dir)?;
@@ -38,7 +36,10 @@ impl Cache {
         check_dir_path(path)?;
         let mut local_hashes = HashSet::new();
         for file_entry in fs::read_dir(path)? {
-            // todo 添加文件过滤器，按照文件类型过滤
+            // 文件过滤器，按照文件类型过滤
+            if !check_file_extensions(path) {
+                continue;
+            }
             let hash = hash_one_file(&file_entry?.path())?;
             local_hashes.insert(hash);
         }
@@ -68,7 +69,7 @@ fn check_dir_path(path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     if !path.exists() || !path.is_dir() {
         return Err(Box::new(io::Error::new(
             ErrorKind::NotADirectory,
-            format!("{} does not exist", path),
+            format!("{:?} does not exist", path),
         )));
     }
     Ok(())

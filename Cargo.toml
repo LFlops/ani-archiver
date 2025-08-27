@@ -9,7 +9,6 @@ tokio = { version = "1", features = ["full"] }
 reqwest = { version = "0.12.22", features = ["json", "native-tls", "socks", "system-proxy"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-clap = { version = "4.5.42", features = ["derive"] }
 dotenv = "0.15"
 sha2 = "0.10"
 regex = "1.11.1"
@@ -17,6 +16,17 @@ tempfile = "3.20.0"
 lazy_static = "1.5.0"
 futures = "0.3"
 thiserror = "1.0.40"
+log4rs = "1.2"
+nix = { version = "0.30.1", features = ["fs"] }
+log = "0.4.27"
+cached = "0.56.0"
+temp-env = "0.3.6"
+mockall = "0.13.1"
+
+# 命令行参数处理
+#clap = { version = "4.5.42", features = ["derive"] }
+# 如果需要写入 nfo，可以使用这个 crate。
+#serde-xml-rs = "0.8.1"
 
 [dev-dependencies]
 mockito = "0.31"

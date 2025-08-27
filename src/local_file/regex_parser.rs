@@ -5,7 +5,7 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::env;
-use std::num::FpCategory::Infinite;
+use std::path::Path;
 
 // 定义 .env 中规则的 JSON 结构
 #[derive(Debug, Serialize, Deserialize)]
@@ -86,4 +86,10 @@ pub fn extract_episode_info(filename: &str) -> Option<(String, String)> {
     }
 
     None
+}
+#[allow(dead_code)]
+pub async fn check_filename_by_regex(file_path: &Path) -> bool {
+    let file_name = file_path.file_name().unwrap().to_string_lossy();
+    let regex = Regex::new(r"^[a-zA-Z0-9\s\-_]+$").unwrap();
+    regex.is_match(&file_name)
 }

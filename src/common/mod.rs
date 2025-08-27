@@ -1,7 +1,7 @@
 use std::path::Path;
 const VIDEO_EXTENSIONS: [&str; 4] = [".mkv", ".mp4", ".avi", ".m4v"];
 const SUBTITLE_EXTENSIONS: [&str; 2] = [".srt", ".ass"];
-pub async fn check_file_extensions(file_path: &Path) -> bool {
+pub fn check_file_extensions(file_path: &Path) -> bool {
     let file_extension = file_path
         .extension()
         .and_then(|ext| ext.to_str())

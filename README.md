@@ -93,8 +93,8 @@ sequenceDiagram
 4. **result **
 * when program run successfully, it will output a message like this:
 ```shell
-    - .nfo file created for show
-    - .processed.json file created for marker the processed
+    - .nfo local_file created for show
+    - .processed.json local_file created for marker the processed
 ```
 ## Testing and Coverage
 

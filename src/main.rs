@@ -1,18 +1,16 @@
-mod file;
-mod regex_parser;
+mod cache;
+mod common;
+mod local_file;
 mod tmdb;
-mod utils;
 
-use crate::file::cache::check_processed;
-use crate::file::{organize_files, write_marker};
-use crate::tmdb::{check_tmdb_id, process_show, query_tmdb_id};
-use crate::utils::hash_files;
+use crate::cache::Cache;
+use crate::tmdb::{check_tmdb_id, query_tmdb_id};
 use dotenv::dotenv;
-use file::nfo::create_tv_show_nfo;
 use reqwest::{Client, Proxy};
 use std::env;
 use std::fs;
 use std::path::PathBuf;
+use log::warn;
 
 //创建一个类型，用于存放从环境变量中获取的API密钥/Source/Dest 等
 async fn local_env() -> Result<(String, PathBuf, PathBuf, Option<Proxy>), Box<dyn std::error::Error>>
@@ -31,7 +29,7 @@ async fn local_env() -> Result<(String, PathBuf, PathBuf, Option<Proxy>), Box<dy
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenv().ok();
 
-    let (api_key, source, dest, proxy) = local_env().await?;
+    let (_api_key, source, dest, proxy) = local_env().await?;
     fs::create_dir_all(&dest)?;
 
     let mut client_builder = Client::builder().timeout(std::time::Duration::from_secs(30));
@@ -46,32 +44,30 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         if path.is_dir() {
             let show_name = path.file_name().unwrap().to_string_lossy().to_string();
-            let dest_dir = dest.join(&show_name);
 
-            let (current_file_hashes, video_files) = hash_files(&path).await?;
-
-            let marker_file_path = dest_dir.join(".processed.json");
-            let (mut tmdb_id, details_cached) =
-                check_processed(&marker_file_path, &current_file_hashes, &show_name).await?;
-            if !check_tmdb_id(&tmdb_id) {
-                continue;
-            }
-
-            tmdb_id = match query_tmdb_id(&client, &show_name).await {
+            let tmdb_id = match query_tmdb_id(&client, &show_name).await {
                 Ok(tmdb_id) => tmdb_id,
                 Err(e) => {
                     println!("Error fetching TMDB ID for '{show_name}': {e}");
                     continue;
                 }
             };
+            if !check_tmdb_id(&tmdb_id) {
+                warn!("Invalid TMDB ID for '{show_name}': {tmdb_id}");
+            }
 
-            let show_details = process_show(details_cached, &client, &api_key, tmdb_id).await?;
-            write_marker(&marker_file_path, &dest_dir, tmdb_id, current_file_hashes).await?;
-
-            fs::create_dir_all(&dest_dir)?;
-            let nfo_content = create_tv_show_nfo(&show_details);
-            fs::write(dest_dir.join("tvshow.nfo"), nfo_content)?;
-            organize_files(video_files, &dest_dir, &show_name).await?;
+            let dest_dir = dest.join(&show_name);
+            if !dest_dir.is_dir() {
+                fs::create_dir_all(&dest_dir)?;
+            }
+            let cache = Cache::from_path(&path).await?;
+            if cache.check_cache(&dest_dir)? {
+                continue;
+            }
+            cache.write_cache(&dest_dir)?;
+            // todo
+            let local_file = local_file::LocalFile::from_env();
+            local_file.organize_files(&show_name).await?;
             println!("Successfully processed '{show_name}'.");
         }
     }
