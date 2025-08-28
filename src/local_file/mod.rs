@@ -145,4 +145,6 @@ mod tests {
             }
         }
     }
+
+    // todo test organize_files with new trait
 }
