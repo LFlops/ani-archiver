@@ -1,0 +1,39 @@
+name: Deploy to Kubernetes
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+    steps:
+      - name: Checkout code
+        # 建议使用最新的主版本
+        uses: actions/checkout@v4
+
+      # --- 1. 设置环境变量 ---
+      # 注意：直接将 Secret 写入文件可能存在安全风险。
+      # 对于 Kubernetes，更推荐的做法是使用 k8s Secret 对象管理敏感信息。
+      - name: Create environment files from secrets
+        run: |
+          echo "APP_PORT=${{ secrets.APP_PORT }}" > ./app-config.env
+          echo "TMDB_API_KEY=${{ secrets.TMDB_API_KEY }}" > ./app-secret.env
+
+      # --- 2. 构建本地 Docker 镜像 (不推送) ---
+      - name: Build Docker image locally
+        id: docker_build
+        # 建议使用最新的主版本
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          # a. 关键修改：禁止推送到远程仓库
+          push: false
+          # b. 关键修改：将镜像加载到本地 Docker 中
+          load: true
+          # c. 标签依然需要，供本地引用。可以简化命名。
+          tags: ani-archiver:latest
+
+
