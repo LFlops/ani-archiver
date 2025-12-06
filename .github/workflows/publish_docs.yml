@@ -1,0 +1,39 @@
+name: Publish Docs
+
+# 触发条件：当推送到 main 分支时触发
+# 注意：如果你的主分支叫 master，请把下面的 main 改为 master
+on:
+  push:
+    branches:
+      - main
+
+# 权限设置：允许这个 Action 修改仓库内容（为了发布 gh-pages 分支）
+permissions:
+  contents: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      # 1. 拉取代码
+      - uses: actions/checkout@v4
+
+      # 2. 设置 Python 环境
+      - name: Configure Git Credentials
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: 3.x
+
+      # 3. 安装 MkDocs 和 Material 主题
+      - name: Install MkDocs and Dependencies
+        run: |
+          pip install mkdocs-material
+
+      # 4. 构建并部署到 gh-pages 分支
+      - name: Deploy to GitHub Pages
+        run: mkdocs gh-deploy --force

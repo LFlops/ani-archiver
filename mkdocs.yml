@@ -1,0 +1,38 @@
+site_name: Ani Archiver
+site_url: https://LFlops.github.io/ani-archiver/
+repo_url: https://github.com/LFlops/ani-archiver
+repo_name: LFlops/ani-archiver
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  # 开启夜间模式切换
+  palette:
+    - scheme: default
+      primary: teal
+      accent: purple
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: teal
+      accent: lime
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - content.code.copy
+
+# 必须开启 Mermaid 扩展，才能渲染你的图表
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
